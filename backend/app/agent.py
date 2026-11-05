@@ -23,6 +23,7 @@ import traceback
 import json
 from typing import Any
 
+from . import finance_agent
 from . import comms, learning, llm
 from .core import (APPROVAL_THRESHOLD_INR, CLOCK, broadcast_state, db, db_conn, emit,
                    next_incident_id, run_context)
@@ -173,7 +174,12 @@ async def wake(conn, *, component_id: str, trigger: str,
 
     await broadcast_state("agent_woke", {"incident_id": incident_id})
 
-    if incident_id not in _RUNNING:
+    from .agents import runtime as team
+    if team.enabled():
+        # Hand the incident to the LangGraph multi-agent team. The Sentinel's
+        # triage above becomes the thread's starting context.
+        team.start_incident(incident_id, ctx={k: v for k, v in _STATE[incident_id].items() if k != "steps"})
+    elif incident_id not in _RUNNING:
         _RUNNING[incident_id] = asyncio.create_task(_run(incident_id))
     return incident_id
 
@@ -235,7 +241,7 @@ async def _run(incident_id: str) -> None:
         _RUNNING.pop(incident_id, None)
 
 
-async def _investigate(conn, incident_id: str) -> None:
+async def _investigate(conn, incident_id: str, *, settle_money: bool = True) -> None:
     """Mandatory evidence pack in PARALLEL, then LLM gap analysis.
 
     The evidence pack is not a choice. Asking a model whether inventory matters
@@ -322,6 +328,18 @@ async def _investigate(conn, incident_id: str) -> None:
                     f"{sup_name} says '{c['supplier_claim']}' but the carrier shows "
                     f"'{c['tracking_status']}'. Treating that shipment as unreliable.",
                     status="warning")
+        # Money follows facts: a contradicted claim never gets paid. Deterministic,
+        # no model in the loop — the LLM's verdict above is explanation only.
+        if not settle_money:   # multi-agent mode: the Treasurer agent owns this decision
+            c["supplier_name"] = sup_name
+            continue
+        paid = await finance_agent.void_for_po(
+            conn, c["id"], incident_id=incident_id,
+            reason=f"{sup_name} claimed '{c['supplier_claim']}' but the carrier shows '{c['tracking_status']}'")
+        if paid and paid.get("state") in ("hold_voided", "refunded"):
+            await _step(conn, incident_id,
+                        f"PayPal: {'voided the hold' if paid['state'] == 'hold_voided' else 'refunded'} "
+                        f"${float(paid['amount_usd']):,.2f} on {c['id']} — {sup_name} is not paid for a shipment that never left.")
 
     st["contradictions"] = contradictions
     st["suppliers_available"] = len(sup)
@@ -376,7 +394,8 @@ async def _communicate(conn, incident_id: str) -> None:
                     f"({', '.join(a['supplier_id'] for a in alts)}).")
 
 
-async def _plan_and_validate(conn, incident_id: str, *, prefer_label: str | None = None) -> None:
+async def _plan_and_validate(conn, incident_id: str, *, prefer_label: str | None = None,
+                             auto_execute: bool = True) -> None:
     """PLAN (deterministic) → VALIDATE → policy gate → execute or escalate.
 
     `prefer_label` lets a human pick one of the options the solver already
@@ -555,7 +574,8 @@ async def _plan_and_validate(conn, incident_id: str, *, prefer_label: str | None
     await _step(conn, incident_id,
                 f"Rs {chosen['total_cost']:,.0f} is within my Rs {APPROVAL_THRESHOLD_INR:,} "
                 f"authority. Executing without approval.")
-    await execute(conn, incident_id)
+    if auto_execute:
+        await execute(conn, incident_id)
 
 
 async def plan_now(conn, incident_id: str, *,
@@ -572,7 +592,7 @@ async def plan_now(conn, incident_id: str, *,
     return (_STATE.get(incident_id) or {}).get("result")
 
 
-async def execute(conn, incident_id: str) -> None:
+async def execute(conn, incident_id: str, *, hold_money: bool = True) -> None:
     """EXECUTE → VERIFY. Creates the PO, then keeps ownership until stock is real."""
     st = _STATE.get(incident_id, {})
     chosen = (st.get("result") or {}).get("chosen")
@@ -644,6 +664,33 @@ async def execute(conn, incident_id: str) -> None:
 
     await _step(conn, incident_id,
                 f"Created {len(created)} recovery purchase order(s): {', '.join(created)}.")
+    st["created_pos"] = [{"po_id": po, "mode": l.get("mode"), "supplier_id": l.get("supplier_id")}
+                         for po, l in zip(created, chosen.get("lines", []))]
+    if not hold_money:   # multi-agent mode: the Treasurer agent places the holds
+        await emit(conn, incident_id=incident_id, actor="agent", event_type="ERP_UPDATED",
+                   human_summary=f"ERP updated with {len(created)} new purchase order(s).",
+                   payload={"purchase_orders": created})
+        return
+
+    # Reserve the money for each new order through PayPal (AUTHORIZE against the
+    # mandate). Above the authority limit the hold still happens; release waits
+    # for a human code. Air shipments also pay the forwarder's expedite fee.
+    for po_id, line in zip(created, chosen.get("lines", [])):
+        pay = await finance_agent.hold_for_po(conn, po_id, incident_id=incident_id,
+                                              reason=f"Recovery order for incident {incident_id}")
+        if pay and pay.get("authorization_id"):
+            await _step(conn, incident_id,
+                        f"PayPal: holding ${float(pay['amount_usd']):,.2f} for {po_id}"
+                        + (" — above my authority, release needs a human code."
+                           if pay.get("needs_approval") else " — released only on verified goods."))
+        elif pay:
+            await _step(conn, incident_id, f"PayPal hold for {po_id} not placed: {pay.get('note')}",
+                        status="warning")
+        if line.get("mode") == "AIR" and pay and pay.get("authorization_id"):
+            fee = max(15.0, round(float(pay["amount_usd"]) * 0.03, 2))
+            out = await finance_agent.expedite_fee(conn, incident_id=incident_id, po_id=po_id, amount_usd=fee)
+            if out:
+                await _step(conn, incident_id, f"PayPal Payouts: ${fee:,.2f} air-expedite fee paid to the forwarder.")
     await emit(conn, incident_id=incident_id, actor="agent", event_type="ERP_UPDATED",
                human_summary=f"ERP updated with {len(created)} new purchase order(s).",
                payload={"purchase_orders": created})
@@ -657,6 +704,9 @@ async def execute(conn, incident_id: str) -> None:
 async def resume(conn, incident_id: str, *, decision: str,
                  note: str | None = None, exclude: list[str] | None = None) -> None:
     """The interrupt exit. Human decided; agent picks the graph back up."""
+    from .agents import runtime as team
+    if team.enabled() and await team.resume(incident_id, decision=decision, note=note, exclude=exclude):
+        return   # the Approval agent's interrupt() was waiting; the team continues the thread
     st = _STATE.setdefault(incident_id, {"incident_id": incident_id})
 
     if decision == "approve":

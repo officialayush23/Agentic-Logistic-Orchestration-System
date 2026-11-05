@@ -12,7 +12,7 @@ import os
 import pathlib
 from typing import Any
 
-from fastapi import (Depends, FastAPI, Header, HTTPException, WebSocket,
+from fastapi import (Depends, FastAPI, Header, HTTPException, Request, WebSocket,
                      WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -27,11 +27,17 @@ from .solver import solve_for_production_order
 from .scorer import score_run
 from . import (agent, auth, claims, command, comms, evaluation, intelligence,
                learning, llm, llm_settings, supplier_portal, triage, worldbuild)
+from . import finance_agent, guards, mailer, paypal_client, ui_snapshot
+from .agents import runtime as team
 from .core import as_system as core_as_system, current_org, set_org
 from urllib.parse import parse_qs
 from .risk import assess as assess_risk
 
 SEED_PATH = pathlib.Path(__file__).resolve().parents[2] / "supabase" / "seed.sql"
+
+import logging
+log = logging.getLogger("disruptionops")
+_WEBHOOK: dict[str, str] = {}
 
 app = FastAPI(title="Supply Chain Disruption Control Agent", version="0.1.0")
 # Deployed, the frontend is no longer on localhost, and a CORS rule that only
@@ -84,10 +90,64 @@ async def plain_health():
     return {"status": "healthy"}
 
 
+@app.on_event("startup")
+async def _register_paypal_webhook() -> None:
+    """Point PayPal's webhooks at this deployment (Render sets RENDER_EXTERNAL_URL)."""
+    base = os.getenv("PUBLIC_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL")
+    if not (base and paypal_client.configured()):
+        return
+
+    async def _go():
+        try:
+            wid = await paypal_client.ensure_webhook(f"{base.rstrip('/')}/api/webhooks/paypal",
+                                                     paypal_client.WEBHOOK_EVENTS)
+            _WEBHOOK["id"] = wid
+            log.info("PayPal webhook registered: %s", wid)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("PayPal webhook registration failed: %s", exc)
+    asyncio.create_task(_go())
+
+
+@app.on_event("startup")
+async def _agent_team() -> None:
+    """Open agent memory (Postgres checkpointer + store) and start the Sentinel patrol."""
+    if not team.enabled():
+        return
+    from .agents import memory as agent_memory
+
+    async def _boot():
+        try:
+            from . import migrate
+            done = await migrate.run()
+            if done:
+                log.info("startup migrations: %s", done)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("startup migrations failed: %s", exc)
+        try:
+            await agent_memory.open_memory()
+            log.info("agent team ready, memory=%s", agent_memory.MODE)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("agent memory init failed: %s", exc)
+        every = float(os.getenv("PATROL_MINUTES", "15")) * 60
+        while every > 0:
+            await asyncio.sleep(every)
+            try:
+                async with core_as_system():
+                    async with db_conn() as conn:
+                        orgs = [r["id"] for r in await conn.fetch("select id from organizations")]
+                for org in orgs:
+                    await team.patrol(org)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("patrol failed: %s", exc)
+    asyncio.create_task(_boot())
+
+
 @app.on_event("shutdown")
 async def _shutdown() -> None:
     await injector.stop_all()
     await close_db()
+    from .agents import memory as agent_memory
+    await agent_memory.close_memory()
 
 
 # --------------------------------------------------------------- models ----
@@ -287,6 +347,7 @@ async def scenario_detail(scenario_id: str):
 PUBLIC_PATHS = frozenset({
     "/", "/health", "/api/health",
     "/api/auth/signup", "/api/auth/login",
+    "/api/webhooks/paypal",
     "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect",
 })
 
@@ -447,10 +508,19 @@ async def inject(scenario_id: str, fresh: bool = True):
             # Re-seed operational state only. Run history and the audit log are
             # preserved, so the comparison against earlier runs survives.
             await reset(mode="demo")
+    # Money is reserved for every open purchase order before the world starts
+    # moving, so a supplier who later lies has a real PayPal hold to lose.
+    holds = 0
+    try:
+        async with db_conn() as conn:
+            holds = await finance_agent.ensure_holds_for_open_pos(conn)
+    except Exception as exc:  # noqa: BLE001 — never block a scenario on PayPal
+        log.warning("could not place PayPal holds before %s: %s", scenario_id, exc)
     try:
         out = await injector.inject(scenario_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    out["paypal_holds_placed"] = holds
     if reseeded:
         out["world_reseeded"] = True
         out["note"] = (f"{reseeded} recovery order(s) from a previous run were still "
@@ -582,6 +652,12 @@ async def reset(mode: str = "demo"):
         # events behind it.
         await _set_active_run(conn, None)
         await conn.execute(sql)
+        from . import migrate as _mig
+        await _mig.seed_shield(conn)
+        # Payments from the previous world stay as history, but stop describing
+        # the purchase orders that now exist under the same ids.
+        await conn.execute("update payments set archived = true where not archived")
+        await conn.execute("update release_approvals set state='expired' where state='pending'")
 
         # Tables that hold no foreign key into the seeded world, and therefore
         # were quietly surviving a reset. A "clean" world showing four supplier
@@ -799,6 +875,8 @@ async def hard_reset():
                 restart identity cascade""")
             # The baseline world, re-seeded.
             await conn.execute(sql)
+            from . import migrate as _mig
+            await _mig.seed_shield(conn)
             await _set_active_run(conn, None)
 
     set_run_context(None)
@@ -1817,6 +1895,7 @@ class ReceiptBody(BaseModel):
     quantity_received: int
     quantity_approved: int
     reason: str | None = None
+    invoice_number: str | None = None
 
 
 @app.post("/api/warehouse/receive")
@@ -1863,10 +1942,25 @@ async def receive_shipment(b: ReceiptBody):
             conn, po_id=b.po_id, quantity_received=b.quantity_received,
             quantity_rejected=quarantined, incident_id=inc)
 
-        if inc:
-            out = await agent.verify(conn, inc)
-            return {**(out if isinstance(out, dict) else {"ok": True}), "learned": learned}
-    return {"ok": True, "learned": learned}
+        # Goods are in the building: three-way match, then PayPal capture + payout
+        # (or void/refund if QC failed). Deterministic; the LLM is not involved.
+        if not team.enabled():
+            await finance_agent.on_goods_received(
+                conn, b.po_id, received=b.quantity_received, approved=b.quantity_approved,
+                incident_id=inc)
+            if inc:
+                out = await agent.verify(conn, inc)
+                return {**(out if isinstance(out, dict) else {"ok": True}), "learned": learned}
+            return {"ok": True, "learned": learned}
+
+    # Multi-agent: the Treasurer settles through the guards, the Verifier closes or replans.
+    last = await team.goods_received(po_id=b.po_id, received=b.quantity_received,
+                                     approved=b.quantity_approved, incident_id=inc,
+                                     invoice_number=getattr(b, "invoice_number", None))
+    snap = await team.state(inc or f"po:{b.po_id}")
+    v = snap.get("values") or {}
+    return {"ok": True, "learned": learned, "phase": v.get("phase"),
+            "money": (v.get("money") or [])[-3:], "guards": (v.get("guard_verdicts") or [])[-8:]}
 
 
 # =========================== APPROVALS =======================================
@@ -2623,3 +2717,257 @@ async def ws_endpoint(ws: WebSocket):
         with contextlib.suppress(asyncio.CancelledError):
             await hb
         await HUB.disconnect(ws)
+
+
+# =========================== PAYPAL FINANCE ==================================
+#
+# The money loop. Every write path here is deterministic Python calling PayPal;
+# no endpoint lets a model move money.
+
+
+class MandateComplete(BaseModel):
+    approval_token_id: str
+
+
+class ReleaseDecision(BaseModel):
+    decision: str            # approve | reject
+    code: str | None = None
+
+
+@app.get("/api/finance/summary")
+async def finance_summary(who: dict = Depends(auth.member)):
+    async with db_conn() as conn:
+        m = await finance_agent.mandate(conn)
+        rows = await conn.fetch(
+            "select state, sum(amount_usd) total, count(*) n from payments where not archived group by state")
+    return {"mandate": {"connected": bool(m), "payer_email": (m or {}).get("payer_email"),
+                        "vault_id": (m or {}).get("vault_id"), "approved_at": (m or {}).get("approved_at")},
+            "authority_limit_usd": finance_agent.AUTHORITY_LIMIT_USD,
+            "inr_per_usd": finance_agent.INR_PER_USD,
+            "paypal_configured": paypal_client.configured(), "email_configured": mailer.configured(),
+            "webhook_id": _WEBHOOK.get("id"),
+            "by_state": {r["state"]: {"total": float(r["total"] or 0), "count": r["n"]} for r in rows}}
+
+
+@app.post("/api/finance/mandate/start")
+async def mandate_start(who: dict = Depends(auth.requires("owner", "approver"))):
+    front = os.getenv("FRONTEND_URL", "https://agenticlogisticsystem.vercel.app").rstrip("/")
+    r = await paypal_client.create_setup_token(f"{front}/payments?mandate=return", f"{front}/payments?mandate=cancel")
+    approve = next(l["href"] for l in r["links"] if l["rel"] == "approve")
+    return {"setup_token": r["id"], "approve_url": approve}
+
+
+@app.post("/api/finance/mandate/complete")
+async def mandate_complete(b: MandateComplete, who: dict = Depends(auth.requires("owner", "approver"))):
+    r = await paypal_client.create_payment_token(b.approval_token_id)
+    payer = ((r.get("payment_source") or {}).get("paypal") or {}).get("email_address")
+    async with db_conn() as conn:
+        await conn.execute(
+            """insert into finance_mandates (vault_id, customer_id, payer_email, status, approved_at)
+               values ($1,$2,$3,'active',now())
+               on conflict (org_id) do update set vault_id=excluded.vault_id, customer_id=excluded.customer_id,
+                   payer_email=excluded.payer_email, status='active', approved_at=now()""",
+            r["id"], (r.get("customer") or {}).get("id"), payer)
+        await emit(conn, actor="human", event_type="PAYPAL_MANDATE_CONNECTED",
+                   human_summary=f"PayPal spending mandate connected{' for ' + payer if payer else ''}. "
+                                 f"The agent may now hold funds for purchase orders.",
+                   payload={"vault_id": r["id"]})
+    return {"ok": True, "vault_id": r["id"], "payer_email": payer}
+
+
+@app.get("/api/finance/payments")
+async def finance_payments(who: dict = Depends(auth.member)):
+    async with db_conn() as conn:
+        pays = await conn.fetch("select * from payments where not archived order by created_at desc")
+        evs = await conn.fetch(
+            "select * from payment_events where payment_id = any($1::bigint[]) order by at",
+            [p["id"] for p in pays])
+    by = {}
+    for e in evs:
+        by.setdefault(e["payment_id"], []).append(dict(e))
+    return [{**dict(p), "events": by.get(p["id"], [])} for p in pays]
+
+
+@app.get("/api/finance/approvals")
+async def finance_approvals(who: dict = Depends(auth.member)):
+    async with db_conn() as conn:
+        rows = await conn.fetch(
+            """select a.id, a.payment_id, a.state, a.reason, a.sent_to, a.requested_at, a.expires_at, a.decided_at,
+                      a.decided_by, p.po_id, p.amount_usd, p.incident_id, p.supplier_id
+                 from release_approvals a join payments p on p.id = a.payment_id
+                order by a.requested_at desc limit 50""")
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/finance/approvals/{approval_id}/decide")
+async def finance_decide(approval_id: int, b: ReleaseDecision, who: dict = Depends(auth.requires("owner", "approver"))):
+    if b.decision not in ("approve", "reject"):
+        raise HTTPException(400, "decision must be 'approve' or 'reject'")
+    async with db_conn() as conn:
+        out = await finance_agent.decide_release(conn, approval_id, code=b.code, decision=b.decision,
+                                                 by=who.get("email") or who.get("user_id") or "approver")
+    if not out.get("ok"):
+        raise HTTPException(400, out.get("error"))
+    return out
+
+
+@app.post("/api/webhooks/paypal")
+async def paypal_webhook(request: Request):
+    """PayPal → us. Verified with PayPal's signature API, stored idempotently."""
+    event = await request.json()
+    event_id = event.get("id") or ""
+    verified = False
+    try:
+        if not _WEBHOOK.get("id"):
+            base = os.getenv("PUBLIC_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or ""
+            for w in await paypal_client.list_webhooks():
+                if base and w.get("url", "").startswith(base.rstrip("/")):
+                    _WEBHOOK["id"] = w["id"]
+        if _WEBHOOK.get("id"):
+            verified = await paypal_client.verify_webhook(headers=dict(request.headers), event=event,
+                                                          webhook_id=_WEBHOOK["id"])
+    except Exception as exc:  # noqa: BLE001
+        log.warning("webhook verification error: %s", exc)
+
+    async with core_as_system():
+        async with db_conn() as conn:
+            inserted = await conn.fetchval(
+                """insert into paypal_webhook_events (event_id, event_type, resource_id, verified, payload)
+                   values ($1,$2,$3,$4,$5::jsonb) on conflict (event_id) do nothing returning event_id""",
+                event_id, event.get("event_type", ""), (event.get("resource") or {}).get("id"), verified,
+                json.dumps(event))
+            if not inserted:
+                return {"ok": True, "duplicate": True}
+            res = event.get("resource") or {}
+            rel = (res.get("supplementary_data") or {}).get("related_ids") or {}
+            ids = [x for x in (res.get("id"), rel.get("authorization_id"), rel.get("order_id"),
+                               (res.get("batch_header") or {}).get("payout_batch_id"), res.get("payout_batch_id")) if x]
+            org = await conn.fetchval(
+                """select org_id from payments where authorization_id = any($1::text[]) or capture_id = any($1::text[])
+                       or paypal_order_id = any($1::text[]) or payout_batch_id = any($1::text[])
+                       or refund_id = any($1::text[]) limit 1""", ids) if ids else None
+            if org:
+                await conn.execute("update paypal_webhook_events set org_id=$2 where event_id=$1", event_id, org)
+    if not org:
+        return {"ok": True, "matched": False, "verified": verified}
+    set_org(org)
+    async with db_conn() as conn:
+        out = await finance_agent.on_webhook(conn, event, verified=verified)
+    async with core_as_system():
+        async with db_conn() as conn:
+            await conn.execute("update paypal_webhook_events set processed=true where event_id=$1", event_id)
+    return {"ok": True, "verified": verified, **out}
+
+
+@app.get("/api/ui/snapshot")
+async def ui_snapshot_endpoint(who: dict = Depends(auth.member)):
+    """Everything the dashboard draws, in the exact shape the UI renders."""
+    async with db_conn() as conn:
+        return await ui_snapshot.build(conn)
+
+
+# ============================ MULTI-AGENT TEAM ===============================
+
+class PayeeChangeBody(BaseModel):
+    supplier_id: str
+    new_email: str
+    sender: str | None = None
+
+
+class CopilotBody(BaseModel):
+    question: str
+
+
+@app.get("/api/agents")
+async def agents_overview():
+    """The team, the graph (Mermaid) and where its memory lives."""
+    from .agents import memory as agent_memory
+    return {"enabled": team.enabled(), "memory": agent_memory.MODE,
+            "agents": [
+                {"id": "supervisor", "role": "Routes every turn from shared state (policy, replayable)"},
+                {"id": "sentinel", "role": "Risk triage, buy timers, push-outs, hold expiry patrol"},
+                {"id": "investigator", "role": "Evidence pack; Gemini reads claims vs carrier truth"},
+                {"id": "liaison", "role": "Supplier/warehouse email, RFQs, ack chases, payee confirmations"},
+                {"id": "sourcing", "role": "Deterministic solver, applies long-term supplier memory"},
+                {"id": "approval", "role": "Human-in-the-loop via LangGraph interrupt()"},
+                {"id": "procurement", "role": "Raises purchase orders in the ERP"},
+                {"id": "treasurer", "role": "Only money mover: PayPal holds/captures/voids/payouts through 7 guards"},
+                {"id": "verifier", "role": "Closes only on usable stock; writes the episode to memory"},
+                {"id": "copilot", "role": "Gemini ReAct agent with read-only tools"}],
+            "graph_mermaid": await team.mermaid()}
+
+
+@app.get("/api/agents/threads/{thread_id}")
+async def agent_thread(thread_id: str):
+    return await team.state(thread_id)
+
+
+@app.get("/api/agents/threads/{thread_id}/history")
+async def agent_thread_history(thread_id: str, limit: int = 50):
+    return {"thread_id": thread_id, "checkpoints": await team.history(thread_id, limit=limit)}
+
+
+@app.post("/api/agents/patrol")
+async def agent_patrol():
+    await team.patrol(current_org())
+    return await team.state(f"patrol:{current_org()}")
+
+
+@app.post("/api/agents/payee-change")
+async def agent_payee_change(b: PayeeChangeBody):
+    await team.payee_change(supplier_id=b.supplier_id, new_email=b.new_email, sender=b.sender, org=current_org())
+    return await team.state(f"payee:{b.supplier_id}")
+
+
+@app.post("/api/copilot")
+async def copilot_ask(b: CopilotBody, request: Request):
+    from .agents import copilot
+    user = getattr(request.state, "user_id", None) or "operator"
+    try:
+        return await copilot.ask(b.question, user=str(user), org=current_org() or "NEXA")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(503, f"Copilot unavailable: {exc}")
+
+
+@app.get("/api/shield")
+async def buyer_shield():
+    async with db_conn() as conn:
+        summary = await guards.protected_summary(conn)
+        try:
+            rows = await conn.fetch("""select id, guard, outcome, po_id, supplier_id, incident_id, amount_usd,
+                                              reason, agent, created_at
+                                         from guard_events order by id desc limit 100""")
+        except Exception:  # noqa: BLE001
+            rows = []
+    return {**summary, "events": [dict(r) for r in rows]}
+
+
+class QuoteBody(BaseModel):
+    component_id: str
+    supplier_id: str
+    unit_price_inr: float
+    quantity: int
+    note: str | None = None
+
+
+@app.post("/api/shield/quote")
+async def shield_quote(b: QuoteBody):
+    """Fair-price guard on an inbound quote (e.g. a broker offer) before any PO or hold exists."""
+    async with db_conn() as conn:
+        v = await guards.fair_price(conn, {"component_id": b.component_id, "unit_price": b.unit_price_inr,
+                                           "quantity": b.quantity}, inr_per_usd=finance_agent.INR_PER_USD)
+        await guards.record(conn, v, supplier_id=b.supplier_id, agent="sourcing")
+    return v.to_dict()
+
+
+@app.post("/api/shield/hold/{po_id}")
+async def shield_hold(po_id: str):
+    """Place the PayPal hold for an existing PO through the guards (fair price, budget, authority)."""
+    async with db_conn() as conn:
+        return await finance_agent.hold_for_po(conn, po_id, reason="Hold requested from the Buyer Shield")
+
+
+@app.post("/api/shield/retention/{po_id}")
+async def shield_retention(po_id: str):
+    async with db_conn() as conn:
+        return await finance_agent.release_retention(conn, po_id)

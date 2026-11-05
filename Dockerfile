@@ -16,7 +16,7 @@ COPY backend/requirements.txt ./requirements.txt
 RUN pip install -r requirements.txt
 
 COPY backend/app ./app
-COPY supabase/seed.sql /srv/supabase/seed.sql
+COPY supabase /srv/supabase
 
 # Never run as root.
 RUN useradd --create-home --uid 10001 app && chown -R app:app /srv

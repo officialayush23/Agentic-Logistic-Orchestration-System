@@ -65,6 +65,15 @@ services:
         value: sandbox
 
       # ---- policy -----------------------------------------------------------
+      - key: AUTHORITY_LIMIT_USD
+        value: "5000"
+      # ---- multi-agent team (LangGraph) ---------------------------------------
+      - key: MULTI_AGENT
+        value: "true"
+      - key: PATROL_MINUTES
+        value: "15"
+      - key: AUTO_MIGRATIONS
+        value: 0011_paypal_finance_and_projects,0012_buyer_shield_and_agents
       - key: APPROVAL_THRESHOLD_INR
         value: "150000"
       - key: EMERGENCY_BUDGET_INR
