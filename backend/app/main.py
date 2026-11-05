@@ -111,7 +111,9 @@ class ManualLog(BaseModel):
 
 @app.get("/api/health")
 async def health():
-    async with db_conn() as conn:
+    # Public liveness + DB check. It has no tenant, so it runs as system and
+    # returns only a count — no tenant data leaves this endpoint.
+    async with core_as_system(), db_conn() as conn:
         n = await conn.fetchval("select count(*) from suppliers")
     return {"ok": True, "suppliers": n, "clock": CLOCK.state(),
             "ws_clients": HUB.count, "running_scenarios": injector.running()}
