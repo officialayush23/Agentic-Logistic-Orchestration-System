@@ -11,6 +11,87 @@ DisruptionOps does that without being asked. **Nobody presses a Solve button.**
 
 ---
 
+## PayPal × AI hackathon edition: what judges should read first
+
+**Live:** https://agenticlogisticsystem.vercel.app · **API:** https://agentic-logistic-orchestration-system.onrender.com/api/health
+**Demo login:** `demo@disruptionops.io` / `DemoPass123!` (org NEXA). Render's free tier sleeps: open the health URL first and give it ~50 s.
+
+DisruptionOps is a **buyer-side agent team** for manufacturers. It makes sure suppliers can't overcharge you, get paid twice, get paid for goods that never shipped, or redirect your money, and it keeps every customer project on schedule. **The AI reads; deterministic code decides; only code moves money, through PayPal.**
+
+### How we use PayPal (sandbox)
+
+| PayPal product | Call | Where | When |
+|---|---|---|---|
+| Vault v3 | `POST /v3/vault/setup-tokens`, `/payment-tokens` | `backend/app/paypal_client.py` | The plant approves a spending mandate once, on PayPal |
+| Orders v2 | `POST /v2/checkout/orders` with `intent=AUTHORIZE` + `vault_id` | `finance_agent.hold_for_po` | Every purchase order: funds **held**, not moved (after the fair-price and budget guards) |
+| Payments v2 | `…/authorizations/{id}/capture` (full or **partial**, `final_capture`) | `finance_agent._capture_and_pay` | Goods received + QC: pay accepted value **minus late-delivery credit and retention** |
+| Payments v2 | `…/authorizations/{id}/void` · `…/captures/{id}/refund` | `finance_agent.void_for_po` | Supplier claim contradicted by the carrier · goods failed QC |
+| Payments v2 | `…/authorizations/{id}/reauthorize` | `finance_agent.reauthorize_stale_holds` | Holds older than 25 days on long ocean legs (PayPal expires them at 29) |
+| Payouts | `POST /v1/payments/payouts` | `finance_agent` | Supplier payment, **only to the locked, verified payee**; forwarder expedite fees |
+| Webhooks | register + `verify-webhook-signature` | `main.py /api/webhooks/paypal` | Every PayPal state change; idempotent by event id |
+
+A vaulted token can't pay a third party directly (`BILLING_AGREEMENT_NOT_FOUND`), so money is held and captured to the DisruptionOps merchant, then paid out to the supplier. That turned out to be exactly where the guards belong.
+
+### How we use AI
+
+- **Google Gemini** (`GEMINI_MODEL`):
+  - reads supplier emails, quotes, invoices and QC replies;
+  - judges claim-vs-carrier contradictions;
+  - drafts supplier messages and explains decisions;
+  - powers the **Copilot**.
+- **LangGraph multi-agent team** (`backend/app/agents/`):
+
+```
+supervisor ─┬─ sentinel      risk triage · patrol: buy timers, push-outs, missing acks, hold expiry
+            ├─ investigator  evidence pack; Gemini reads claims vs carrier truth
+            ├─ liaison       supplier / warehouse email, RFQs, chases, payee-change confirmation
+            ├─ sourcing      deterministic solver; applies long-term supplier memory
+            ├─ approval      human-in-the-loop via LangGraph interrupt()
+            ├─ procurement   raises purchase orders
+            ├─ treasurer     the ONLY money mover; no LLM; PayPal through the Buyer Shield guards
+            └─ verifier      closes only on usable stock; writes the episode to memory
+copilot: Gemini ReAct agent with read-only tools (projects, threads, payments, shield, supplier memory)
+```
+
+- **Short-term memory:** one checkpointed thread per incident (`AsyncPostgresSaver`, schema `langgraph`). An approval days later, or after a redeploy, resumes the same thread with `Command(resume=…)`.
+- **Long-term memory:** `AsyncPostgresStore` holds supplier profiles (contradictions, late deliveries, defects, payee alerts → `trusted` / `watch` / `proof_only`) and past incident episodes. A supplier marked `proof_only` is excluded by Sourcing before the solver runs.
+- **Routing:** a pure function of state (`agents/graph.py::route`). The same facts always pick the same next agent, which is what you want in front of a payment system.
+
+### The Buyer Shield: seven guards (`backend/app/guards.py`)
+
+Fair price (should-cost / last paid / index de-escalation) · budget envelope per project and date window · payee lock (72 h cooling-off + owner code) · duplicate invoice / PO · pay-on-proof · late-delivery credit (partial capture) · quality holdback + retention · hold expiry. Every verdict is a row in `guard_events`, and the "money protected" numbers are summed from that table.
+
+**See every guard fire, live, against the PayPal sandbox:** use Buyer Shield → **Run guard drill** in the UI, or run `python scripts/demo_shield.py https://agentic-logistic-orchestration-system.onrender.com`.
+
+### Sponsor tools
+
+| Tool | Where |
+|---|---|
+| **AG Grid Enterprise** | Projects (grouping, master-detail), Materials tree, Suppliers, Payments ledger, Buyer Shield guard ledger |
+| **AG Studio** | Payments finance dashboards |
+| **Bryntum** | Gantt (project timeline with order-by and payment milestones), Scheduler (supplier lanes), TaskBoard (incident board) |
+| **Render** | Docker web service for the API (`Dockerfile`, `render.yaml`); migrations and demo config apply on boot |
+
+Also used: Mapbox GL (globe), Supabase Postgres (RLS multi-tenancy), Vercel (frontend).
+
+### Setup (hackathon edition)
+
+```bash
+# backend
+cd backend && pip install -r requirements.txt
+cp .env.example .env   # DATABASE_URL, GEMINI_API_KEY, GEMINI_MODEL, PAYPAL_CLIENT_ID/SECRET, SMTP_*, CREDENTIAL_ENCRYPTION_KEY
+uvicorn app.main:app --reload            # applies migrations 0011/0012 + supabase/seed_buyer_shield.sql on startup
+python -m pytest -q tests/test_agents_graph.py   # offline: routing, interrupt/resume, checkpoints, memory, guard math
+
+# frontend
+cd frontend && npm ci
+VITE_API_BASE=http://localhost:8000 npm run dev  # add ?data=sample to any URL to see the sample world
+```
+
+Key env: `AUTHORITY_LIMIT_USD=5000`, `MULTI_AGENT=true`, `PATROL_MINUTES=15`, `AGENT_MEMORY=memory` (forces in-process memory for local runs).
+
+---
+
 ## The one idea that matters
 
 > **The LLM investigates, interprets and explains. Deterministic Python decides.**

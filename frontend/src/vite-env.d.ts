@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_BRYNTUM_LICENSE_KEY?: string
   readonly VITE_AG_STUDIO_LICENSE_KEY?: string
   readonly VITE_AG_GRID_LICENSE_KEY?: string
+  readonly VITE_DEMO_EMAIL?: string
+  readonly VITE_DEMO_PASSWORD?: string
 }
 declare module '@/lib/utils' {
   import type { ClassValue } from 'clsx'

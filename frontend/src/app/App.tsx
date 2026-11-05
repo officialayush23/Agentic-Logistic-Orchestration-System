@@ -17,6 +17,8 @@ const Suppliers = lazy(() => import('./pages/Suppliers'))
 const SimulationLab = lazy(() => import('./pages/SimulationLab'))
 const Audit = lazy(() => import('./pages/Audit'))
 const Integrations = lazy(() => import('./pages/Integrations'))
+const AgentTeam = lazy(() => import('./pages/AgentTeam'))
+const BuyerShield = lazy(() => import('./pages/BuyerShield'))
 
 function PageLoading() {
   return (
@@ -41,6 +43,8 @@ const router = createBrowserRouter([
       { path: '/shipments', element: suspended(<Shipments />) },
       { path: '/payments', element: suspended(<Payments />) },
       { path: '/agent', element: suspended(<AgentBoard />) },
+      { path: '/team', element: suspended(<AgentTeam />) },
+      { path: '/shield', element: suspended(<BuyerShield />) },
       { path: '/approvals', element: suspended(<Approvals />) },
       { path: '/suppliers', element: suspended(<Suppliers />) },
       { path: '/simulate', element: suspended(<SimulationLab />) },

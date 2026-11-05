@@ -44,10 +44,12 @@ export const financialMeta: Record<FinancialState, { label: string; tone: RingTo
   hold_voided: { label: 'Hold voided', tone: 'warn', hint: 'Authorization voided — money never left' },
   refunded: { label: 'Refunded', tone: 'warn', hint: 'Captured, then pulled back' },
   payout_sent: { label: 'Payout sent', tone: 'violet', hint: 'Instant PayPal Payout' },
+  blocked: { label: 'Blocked by guard', tone: 'crit', hint: 'A Buyer Shield guard refused this money movement' },
+  retention_held: { label: 'Retention held', tone: 'azure', hint: 'Paid less retention; the rest is released after line acceptance' },
 }
 
 export function FinancialBadge({ state }: { state: FinancialState }) {
-  const m = financialMeta[state]
+  const m = financialMeta[state] ?? { label: state, tone: 'muted' as RingTone, hint: '' }
   return <span title={m.hint}><StatusBadge tone={m.tone} dot>{m.label}</StatusBadge></span>
 }
 

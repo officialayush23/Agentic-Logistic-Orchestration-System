@@ -15,6 +15,8 @@ export type FinancialState =
   | 'hold_voided'         // authorization voided — supplier contradicted by carrier
   | 'refunded'            // captured, then pulled back
   | 'payout_sent'         // Payouts: expedite fee to a forwarder
+  | 'blocked'             // a Buyer Shield guard refused the hold or the capture
+  | 'retention_held'      // captured less retention; the rest waits for line acceptance
 
 export type AgentStage =
   | 'detected'
