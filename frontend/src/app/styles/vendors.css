@@ -1,7 +1,7 @@
 /* Vendor components restyled to Lavender Glass. Kept out of index.css so that file
    stays verbatim from the design spec. */
 
-/* ---------- globe tooltips (react-globe.gl renders raw HTML) ---------- */
+/* ---------- globe tooltips (Mapbox popups render raw HTML) ---------- */
 .globe-tip {
   background: var(--glass-strong);
   border: 1px solid var(--glass-border);
@@ -75,3 +75,10 @@
 
 /* ---------- AG Studio: let the glass card be the chrome ---------- */
 .studio-glass .ag-studio-root-inner { background: transparent !important; }
+
+/* ---------- Mapbox popups / controls as glass ---------- */
+.globe-popup .mapboxgl-popup-content { background: transparent; padding: 0; box-shadow: none; }
+.globe-popup .mapboxgl-popup-tip { display: none; }
+.mapboxgl-ctrl-group { background: var(--glass-strong) !important; border: 1px solid var(--glass-border); border-radius: 0.75rem !important; box-shadow: var(--glass-shadow) !important; backdrop-filter: blur(18px); }
+.mapboxgl-ctrl-group button + button { border-top-color: oklch(1 0 0 / 0.6) !important; }
+.dark .mapboxgl-ctrl-group button .mapboxgl-ctrl-icon { filter: invert(1); }

@@ -1,159 +1,214 @@
-// The hero: an Earth of lavender hexes with every live shipment arcing into Pune.
-// Arc colour = shipment truth (azure moving, amber delayed, red where the supplier's
-// claim and the carrier disagree). Outbound arcs to dealers are dashed green.
-import { useEffect, useMemo, useRef, useState } from 'react'
-import Globe, { type GlobeMethods } from 'react-globe.gl'
-import { MeshPhongMaterial } from 'three'
-import { feature } from 'topojson-client'
-import type { Topology } from 'topojson-specification'
-import countries110m from 'world-atlas/countries-110m.json'
+// The hero: a real, zoomable Earth (Mapbox Standard on a globe projection) with
+// every live shipment drawn as a great-circle route into Pune. Route colour is
+// shipment truth — azure moving, amber delayed, red where the supplier's claim
+// and the carrier disagree; green dashed routes are finished goods going out to
+// customers. A dot on each route marks where the shipment actually is now.
+import mapboxgl, { type GeoJSONSource, type Map as MapboxMap } from 'mapbox-gl'
+import 'mapbox-gl/dist/mapbox-gl.css'
 import type { FeatureCollection } from 'geojson'
-import { data, poById, shipmentByPo, supplierById } from '../data/source'
+import { useEffect, useMemo, useRef } from 'react'
+import { componentById, data, poById, shipmentByPo, supplierById } from '../data/source'
 import type { ShipmentStatus } from '../data/types'
 import { useUi } from '../store'
-import { hex, rgba } from './palette'
+import { hex } from './palette'
 
-const world = feature(countries110m as unknown as Topology, (countries110m as unknown as Topology).objects.countries) as unknown as FeatureCollection
-
+type ArcStatus = ShipmentStatus | 'outbound'
 export interface Arc {
   id: string
-  startLat: number; startLng: number; endLat: number; endLng: number
-  status: ShipmentStatus | 'outbound'
+  from: [number, number]   // [lng, lat]
+  to: [number, number]
+  status: ArcStatus
+  progress: number
   label: string
 }
 
-const arcColor: Record<Arc['status'], [string, string]> = {
-  in_transit: [rgba(hex.azure, 0.25), hex.azure],
-  delayed: [rgba(hex.warn, 0.25), hex.warn],
-  claim_mismatch: [rgba(hex.crit, 0.3), hex.crit],
-  not_shipped: [rgba(hex.crit, 0.3), hex.crit],
-  delivered: [rgba(hex.good, 0.15), rgba(hex.good, 0.5)],
-  booked: [rgba(hex.violet, 0.2), hex.violet],
-  outbound: [rgba(hex.good, 0.6), rgba(hex.good, 0.2)],
+const arcColor: Record<ArcStatus, string> = {
+  in_transit: hex.azure, delayed: hex.warn, claim_mismatch: hex.crit, not_shipped: hex.crit,
+  delivered: hex.good, booked: hex.violet, outbound: hex.good,
 }
 
 export function buildArcs(projectId?: string): Arc[] {
   const p = data.plant
-  const pos = data.purchaseOrders.filter((po) => (!projectId || po.projectId === projectId) && shipmentByPo[po.id])
+  const pos = data.purchaseOrders.filter((po) => (!projectId || po.projectId === projectId) && po.qty > 0 && shipmentByPo[po.id])
   const inbound: Arc[] = pos.map((po) => {
     const s = supplierById[po.supplierId]
     const sh = shipmentByPo[po.id]!
-    return { id: po.id, startLat: s.lat, startLng: s.lng, endLat: p.lat, endLng: p.lng, status: sh.status,
-      label: `${po.id} · ${s.name} → Pune · ${sh.carrierStatus}` }
+    return {
+      id: po.id, from: [s.lng, s.lat], to: [p.lng, p.lat], status: sh.status, progress: sh.progress,
+      label: `<b>${po.id}</b> · ${componentById[po.componentId]?.name}<br/>${s.name}, ${s.city} → Pune<br/><span style="opacity:.7">${sh.carrier} · ${sh.carrierStatus}</span>`,
+    }
   })
   const outbound: Arc[] = data.projects
     .filter((pr) => pr.health !== 'stood_down' && (!projectId || pr.id === projectId))
     .map((pr) => {
       const [lat, lng] = data.customerCoords[pr.customerId]
-      return { id: `OUT-${pr.id}`, startLat: p.lat, startLng: p.lng, endLat: lat, endLng: lng, status: 'outbound' as const, label: `${pr.name} → customer` }
+      return { id: `OUT-${pr.id}`, from: [p.lng, p.lat], to: [lng, lat], status: 'outbound' as const, progress: 0, label: `<b>${pr.name}</b><br/>to customer` }
     })
   return [...inbound, ...outbound]
 }
 
+/** Great-circle path between two points, longitudes unwrapped so routes never jump the antimeridian. */
+function greatCircle([lng1, lat1]: [number, number], [lng2, lat2]: [number, number], n = 96): [number, number][] {
+  const r = Math.PI / 180
+  const p1 = lat1 * r, l1 = lng1 * r, p2 = lat2 * r, l2 = lng2 * r
+  const d = 2 * Math.asin(Math.sqrt(Math.sin((p2 - p1) / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin((l2 - l1) / 2) ** 2))
+  if (d === 0) return [[lng1, lat1], [lng2, lat2]]
+  const out: [number, number][] = []
+  let prev = lng1
+  for (let i = 0; i <= n; i++) {
+    const f = i / n
+    const A = Math.sin((1 - f) * d) / Math.sin(d), B = Math.sin(f * d) / Math.sin(d)
+    const x = A * Math.cos(p1) * Math.cos(l1) + B * Math.cos(p2) * Math.cos(l2)
+    const y = A * Math.cos(p1) * Math.sin(l1) + B * Math.cos(p2) * Math.sin(l2)
+    const z = A * Math.sin(p1) + B * Math.sin(p2)
+    let lng = Math.atan2(y, x) / r
+    while (lng - prev > 180) lng -= 360
+    while (lng - prev < -180) lng += 360
+    prev = lng
+    out.push([lng, Math.atan2(z, Math.sqrt(x * x + y * y)) / r])
+  }
+  return out
+}
+
+const dashSeq = [[0, 4, 3], [0.5, 4, 2.5], [1, 4, 2], [1.5, 4, 1.5], [2, 4, 1], [2.5, 4, 0.5], [3, 4, 0], [0, 0.5, 3, 3.5], [0, 1, 3, 3], [0, 1.5, 3, 2.5], [0, 2, 3, 2], [0, 2.5, 3, 1.5], [0, 3, 3, 1], [0, 3.5, 3, 0.5]]
+
 export function SupplyGlobe({ projectId, height = 460, autoRotate = true, onSelect }: {
   projectId?: string; height?: number; autoRotate?: boolean; onSelect?: (poId: string) => void
 }) {
-  const wrap = useRef<HTMLDivElement>(null)
-  const globe = useRef<GlobeMethods | undefined>(undefined)
-  const [width, setWidth] = useState(600)
+  const el = useRef<HTMLDivElement>(null)
   const dark = useUi((s) => s.theme === 'dark')
-
-  useEffect(() => {
-    if (!wrap.current) return
-    const ro = new ResizeObserver(([e]) => setWidth(Math.round(e.contentRect.width)))
-    ro.observe(wrap.current)
-    return () => ro.disconnect()
-  }, [])
-
   const arcs = useMemo(() => buildArcs(projectId), [projectId])
-  const supplierPoints = useMemo(() => {
-    const ids = new Set(arcs.filter((a) => a.status !== 'outbound').map((a) => poById[a.id]?.supplierId))
-    return data.suppliers.filter((s) => ids.has(s.id))
-  }, [arcs])
-  const rings = useMemo(() => [
-    { lat: data.plant.lat, lng: data.plant.lng, color: hex.violet },
-    ...arcs.filter((a) => a.status === 'claim_mismatch').map((a) => ({ lat: a.startLat, lng: a.startLng, color: hex.crit })),
-  ], [arcs])
+  const onSelectRef = useRef(onSelect)
+  useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
+  const token = import.meta.env.VITE_MAPBOX_TOKEN
 
-  const material = useMemo(() => new MeshPhongMaterial({
-    color: dark ? '#2a2850' : '#f4f3ff', emissive: dark ? '#1c1a3d' : '#d9d6ff', emissiveIntensity: dark ? 0.6 : 0.55,
-    transparent: true, opacity: 0.92, shininess: 2,
-  }), [dark])
-
-  // Re-aim whenever the canvas resizes: onGlobeReady can fire before the first
-  // measured width, and the default view is the Atlantic.
   useEffect(() => {
-    const id = setTimeout(() => globe.current?.pointOfView({ lat: 20, lng: 80, altitude: projectId ? 1.6 : 1.75 }, 600), 150)
-    return () => clearTimeout(id)
-  }, [width, projectId])
+    if (!el.current || !token) return
+    mapboxgl.accessToken = token
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const map: MapboxMap = new mapboxgl.Map({
+      container: el.current,
+      style: 'mapbox://styles/mapbox/standard',
+      config: { basemap: { lightPreset: dark ? 'night' : 'day', showPointOfInterestLabels: false, showTransitLabels: false, showRoadLabels: false } },
+      projection: 'globe',
+      center: projectId ? [92, 20] : [82, 20],
+      zoom: projectId ? 2.1 : 1.75,
+      attributionControl: false,
+    })
+    map.on('error', (e) => console.error('[globe]', e.error?.message ?? e))
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: true, visualizePitch: true }), 'top-right')
+    map.addControl(new mapboxgl.AttributionControl({ compact: true }))
+    map.scrollZoom.setWheelZoomRate(1 / 300)
 
-  const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const inbound = arcs.filter((a) => a.status !== 'outbound')
+    const routes: FeatureCollection = {
+      type: 'FeatureCollection',
+      features: arcs.map((a) => ({ type: 'Feature', properties: { id: a.id, status: a.status, color: arcColor[a.status], label: a.label }, geometry: { type: 'LineString', coordinates: greatCircle(a.from, a.to) } })),
+    }
+    const positions: FeatureCollection = {
+      type: 'FeatureCollection',
+      features: inbound.filter((a) => a.progress > 0 && a.progress < 1).map((a) => {
+        const path = greatCircle(a.from, a.to)
+        return { type: 'Feature', properties: { color: arcColor[a.status], label: a.label }, geometry: { type: 'Point', coordinates: path[Math.round(a.progress * (path.length - 1))] } }
+      }),
+    }
+    const supplierIds = [...new Set(inbound.map((a) => poById[a.id].supplierId))]
+    const suppliersFc: FeatureCollection = {
+      type: 'FeatureCollection',
+      features: supplierIds.map((id) => {
+        const s = supplierById[id]
+        const color = s.reliability < 50 ? hex.crit : s.reliability < 75 ? hex.warn : hex.violet
+        return { type: 'Feature', properties: { name: s.name, color, label: `<b>${s.name}</b><br/>${s.city}, ${s.country}<br/>Reliability <b>${s.reliability}</b>` }, geometry: { type: 'Point', coordinates: [s.lng, s.lat] } }
+      }),
+    }
+
+    let raf = 0, step = -1, spinning = autoRotate && !reduced && !projectId
+    const popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, className: 'globe-popup', offset: 10 })
+
+    map.on('style.load', () => {
+      map.setFog({
+        color: dark ? 'rgb(28, 26, 58)' : 'rgb(242, 240, 255)',
+        'high-color': dark ? 'rgb(64, 58, 140)' : 'rgb(196, 190, 255)',
+        'horizon-blend': 0.06,
+        'space-color': dark ? 'rgb(14, 12, 34)' : 'rgb(232, 230, 255)',
+        'star-intensity': dark ? 0.35 : 0,
+      })
+      map.addSource('routes', { type: 'geojson', data: routes })
+      map.addSource('positions', { type: 'geojson', data: positions })
+      map.addSource('suppliers', { type: 'geojson', data: suppliersFc })
+      map.addSource('plant', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [data.plant.lng, data.plant.lat] } } as const })
+
+      const labelPaint = { 'text-halo-color': dark ? 'rgba(20,18,45,0.9)' : 'rgba(255,255,255,0.92)', 'text-halo-width': 1.5 }
+      map.addLayer({ id: 'routes-glow', type: 'line', source: 'routes', slot: 'top', paint: { 'line-emissive-strength': 1, 'line-color': ['get', 'color'], 'line-width': 7, 'line-opacity': 0.16, 'line-blur': 4 } })
+      map.addLayer({ id: 'routes-base', type: 'line', source: 'routes', slot: 'top', layout: { 'line-cap': 'round' }, paint: { 'line-emissive-strength': 1, 'line-color': ['get', 'color'], 'line-width': ['case', ['==', ['get', 'status'], 'claim_mismatch'], 2.6, 1.8], 'line-opacity': 0.45 } })
+      map.addLayer({ id: 'routes-dash', type: 'line', source: 'routes', slot: 'top', paint: { 'line-emissive-strength': 1, 'line-color': ['get', 'color'], 'line-width': ['case', ['==', ['get', 'status'], 'claim_mismatch'], 3, 2.2], 'line-dasharray': [0, 4, 3] } })
+      map.addLayer({ id: 'routes-hit', type: 'line', source: 'routes', slot: 'top', paint: { 'line-emissive-strength': 1, 'line-color': '#000', 'line-width': 14, 'line-opacity': 0 } })
+      map.addLayer({ id: 'suppliers-halo', type: 'circle', source: 'suppliers', slot: 'top', paint: { 'circle-emissive-strength': 1, 'circle-radius': 9, 'circle-color': ['get', 'color'], 'circle-opacity': 0.18 } })
+      map.addLayer({ id: 'suppliers', type: 'circle', source: 'suppliers', slot: 'top', paint: { 'circle-emissive-strength': 1, 'circle-radius': 4.5, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } })
+      map.addLayer({ id: 'supplier-names', type: 'symbol', source: 'suppliers', slot: 'top', minzoom: 2.4,
+        layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top' },
+        paint: { 'text-emissive-strength': 1, 'text-color': dark ? '#e9e7ff' : hex.fg, ...labelPaint } })
+      map.addLayer({ id: 'positions', type: 'circle', source: 'positions', slot: 'top', paint: { 'circle-emissive-strength': 1, 'circle-radius': 5, 'circle-color': '#fff', 'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 3 } })
+      map.addLayer({ id: 'plant-pulse', type: 'circle', source: 'plant', slot: 'top', paint: { 'circle-emissive-strength': 1, 'circle-radius': 14, 'circle-color': hex.violet, 'circle-opacity': 0.22 } })
+      map.addLayer({ id: 'plant', type: 'circle', source: 'plant', slot: 'top', paint: { 'circle-emissive-strength': 1, 'circle-radius': 6, 'circle-color': hex.violet, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } })
+      map.addLayer({ id: 'plant-name', type: 'symbol', source: 'plant', slot: 'top',
+        layout: { 'text-field': 'Pune Plant 1', 'text-size': 12, 'text-offset': [0, -1.5] },
+        paint: { 'text-emissive-strength': 1, 'text-color': dark ? '#ffffff' : hex.violet, ...labelPaint } })
+
+      // Marching dashes along every route, a breathing plant marker, slow spin until touched.
+      let last = 0
+      const tick = (t: number) => {
+        if (!reduced && t - last > 60) {
+          last = t
+          step = (step + 1) % dashSeq.length
+          if (map.getLayer('routes-dash')) map.setPaintProperty('routes-dash', 'line-dasharray', dashSeq[step])
+          if (map.getLayer('plant-pulse')) map.setPaintProperty('plant-pulse', 'circle-radius', 12 + 6 * Math.abs(Math.sin(t / 700)))
+        }
+        if (spinning && map.getZoom() < 3) {
+          const c = map.getCenter(); c.lng -= 0.02; map.setCenter(c)
+        }
+        raf = requestAnimationFrame(tick)
+      }
+      raf = requestAnimationFrame(tick)
+
+      for (const layer of ['routes-hit', 'suppliers', 'positions']) {
+        map.on('mouseenter', layer, (e) => {
+          map.getCanvas().style.cursor = 'pointer'
+          const f = e.features?.[0] as unknown as { properties?: Record<string, string> } | undefined
+          if (f) popup.setLngLat(e.lngLat).setHTML(`<div class="globe-tip">${f.properties?.label}</div>`).addTo(map)
+        })
+        map.on('mousemove', layer, (e) => popup.setLngLat(e.lngLat))
+        map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; popup.remove() })
+      }
+      map.on('click', 'routes-hit', (e) => {
+        const id = (e.features?.[0] as unknown as { properties?: Record<string, string> } | undefined)?.properties?.id
+        if (id && !id.startsWith('OUT-')) onSelectRef.current?.(id)
+      })
+      // keep the source typed-imported for future live updates
+      void (map.getSource('positions') as GeoJSONSource | undefined)
+    })
+
+    const stopSpin = () => { spinning = false }
+    map.on('mousedown', stopSpin)
+    map.on('touchstart', stopSpin)
+    map.on('wheel', stopSpin)
+
+    const ro = new ResizeObserver(() => map.resize())
+    ro.observe(el.current)
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); popup.remove(); map.remove() }
+  }, [arcs, dark, projectId, autoRotate, token])
+
+  if (!token) {
+    return <div className="grid place-items-center text-xs text-muted-foreground" style={{ height }}>Set VITE_MAPBOX_TOKEN to show the globe.</div>
+  }
 
   return (
-    <div ref={wrap} className="relative w-full overflow-hidden" style={{ height }}>
-      <Globe
-        ref={globe}
-        width={width}
-        height={height}
-        backgroundColor="rgba(0,0,0,0)"
-        globeMaterial={material}
-        showAtmosphere
-        atmosphereColor={dark ? hex.violet : '#b9b4ff'}
-        atmosphereAltitude={0.18}
-        hexPolygonsData={world.features}
-        hexPolygonResolution={3}
-        hexPolygonMargin={0.62}
-        hexPolygonUseDots
-        hexPolygonColor={() => (dark ? rgba('#a9a6ff', 0.6) : rgba(hex.violet, 0.55))}
-        arcsData={arcs}
-        arcColor={(a: object) => arcColor[(a as Arc).status]}
-        arcStroke={(a: object) => ((a as Arc).status === 'claim_mismatch' ? 0.9 : 0.55)}
-        arcDashLength={(a: object) => ((a as Arc).status === 'outbound' ? 0.08 : 0.45)}
-        arcDashGap={(a: object) => ((a as Arc).status === 'outbound' ? 0.04 : 0.2)}
-        arcDashAnimateTime={(a: object) => (reduced ? 0 : (a as Arc).status === 'claim_mismatch' ? 900 : 2600)}
-        arcAltitudeAutoScale={0.42}
-        arcLabel={(a: object) => `<div class="globe-tip">${(a as Arc).label}</div>`}
-        onArcClick={(a: object) => onSelect?.((a as Arc).id)}
-        pointsData={supplierPoints}
-        pointLat="lat"
-        pointLng="lng"
-        pointColor={(s: object) => {
-          const r = (s as (typeof supplierPoints)[number]).reliability
-          return r < 50 ? hex.crit : r < 75 ? hex.warn : hex.violet
-        }}
-        pointAltitude={0.012}
-        pointRadius={0.45}
-        pointLabel={(s: object) => {
-          const x = s as (typeof supplierPoints)[number]
-          return `<div class="globe-tip"><b>${x.name}</b><br/>${x.city} · reliability ${x.reliability}</div>`
-        }}
-        ringsData={rings}
-        ringColor={(r: object) => (t: number) => rgba((r as { color: string }).color, 1 - t)}
-        ringMaxRadius={4}
-        ringPropagationSpeed={reduced ? 0 : 2.2}
-        ringRepeatPeriod={1100}
-        labelsData={[{ lat: data.plant.lat, lng: data.plant.lng, text: 'Pune Plant 1' }]}
-        labelText="text"
-        labelSize={1.1}
-        labelDotRadius={0.5}
-        labelColor={() => (dark ? '#e9e7ff' : hex.fg)}
-        labelResolution={3}
-        onGlobeReady={() => {
-          const g = globe.current
-          if (!g) return
-          g.pointOfView({ lat: 20, lng: 80, altitude: projectId ? 1.6 : 1.75 }, 0)
-          const c = g.controls()
-          c.autoRotate = autoRotate && !reduced
-          c.autoRotateSpeed = 0.35
-          c.enableZoom = true
-          c.minDistance = 160
-          c.maxDistance = 520
-        }}
-      />
-      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-1.5 text-[11px]">
-        {([['In transit', hex.azure], ['Delayed', hex.warn], ['Claim ≠ carrier', hex.crit], ['To customer', hex.good]] as const).map(([l, c]) => (
-          <span key={l} className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-2 py-0.5 font-medium backdrop-blur dark:bg-white/10">
-            <span className="size-1.5 rounded-full" style={{ background: c }} /> {l}
+    <div className="relative w-full overflow-hidden" style={{ height }}>
+      <div ref={el} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+      <div className="pointer-events-none absolute left-3 top-3 flex max-w-[70%] flex-wrap gap-1.5 text-[11px]">
+        {([['In transit', hex.azure], ['Delayed', hex.warn], ['Claim ≠ carrier', hex.crit], ['To customer', hex.good], ['Shipment now', '#ffffff']] as const).map(([l, c]) => (
+          <span key={l} className="inline-flex items-center gap-1.5 rounded-full bg-white/75 px-2 py-0.5 font-medium backdrop-blur dark:bg-black/40">
+            <span className="size-1.5 rounded-full ring-1 ring-black/10" style={{ background: c }} /> {l}
           </span>
         ))}
       </div>

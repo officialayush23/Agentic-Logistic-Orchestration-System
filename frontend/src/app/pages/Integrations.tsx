@@ -27,7 +27,7 @@ const items: { name: string; icon: LucideIcon; tone: Tone; state: State; role: s
   { name: 'Bryntum TaskBoard', icon: CalendarRange, tone: 'good', state: 'ui-ready', role: 'Incident pipeline through the agent state machine.', uses: ['read-only by design'] },
   { name: 'Supabase Postgres', icon: Database, tone: 'violet', state: 'live', role: 'Projects, POs, audit log; pgvector for semantic audit search.', uses: ['RLS', 'pgvector'] },
   { name: 'Render', icon: Cloud, tone: 'azure', state: 'live', role: 'FastAPI backend (live) and static frontend; public webhook URL.', uses: ['render.yaml blueprint'] },
-  { name: 'react-globe.gl / three.js', icon: Globe2, tone: 'violet', state: 'live', role: 'The 3D supply network.', uses: ['arcs', 'rings', 'hex globe'] },
+  { name: 'Mapbox GL (globe)', icon: Globe2, tone: 'violet', state: 'live', role: 'The 3D supply network: real terrain, zoom to street level, great-circle routes.', uses: ['globe projection', 'animated routes', 'live positions'] },
   { name: 'APIMatic', icon: Code2, tone: 'violet', state: 'optional', role: 'Typed SDK generated from our OpenAPI spec for the frontend.', uses: ['SDK generation'] },
   { name: 'Zapier MCP', icon: Zap, tone: 'warn', state: 'optional', role: 'Critical alerts to Slack / Sheets.', uses: ['MCP actions'] },
 ]
