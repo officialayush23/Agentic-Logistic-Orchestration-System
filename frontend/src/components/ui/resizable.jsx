@@ -4,13 +4,24 @@ import * as ResizablePrimitive from "react-resizable-panels"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * react-resizable-panels v4 renamed `direction` to `orientation`, and this
+ * wrapper was a bare passthrough — so a shadcn-style `direction="horizontal"`
+ * was not mapped, not applied, and leaked onto the DOM node as an unknown
+ * attribute. The group silently fell back to its default axis.
+ *
+ * Accept both spellings and forward the one the library actually reads.
+ */
 function ResizablePanelGroup({
   className,
+  direction,
+  orientation,
   ...props
 }) {
   return (
     <ResizablePrimitive.Group
       data-slot="resizable-panel-group"
+      orientation={orientation ?? direction ?? "horizontal"}
       className={cn("flex h-full w-full aria-[orientation=vertical]:flex-col", className)}
       {...props} />
   );

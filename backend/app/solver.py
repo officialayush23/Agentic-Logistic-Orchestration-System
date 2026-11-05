@@ -81,10 +81,74 @@ class Rejection:
 
 def _hard_filter(candidates: list[dict], *, shortfall: int, hours_left: float,
                  required_certs: list[str], is_hazmat: bool,
-                 budget_left: float) -> tuple[list[dict], list[Rejection]]:
-    """Every rejection is recorded with a reason. That record IS the audit trail."""
+                 budget_left: float,
+                 budget_holders: list[dict] | None = None,
+                 held_units: dict[str, dict] | None = None,
+                 ) -> tuple[list[dict], list[Rejection], list[dict]]:
+    """Every rejection is recorded with a reason. That record IS the audit trail.
+
+    Returns `(kept, rejections, lanes)`.
+
+    `rejections` is deduped per supplier and drops any supplier viable on some
+    other lane — one clean reason each, which is what the Decision Explorer,
+    `evaluate()` and `intelligence.py` all read, and which must not change.
+
+    `lanes` is the pre-dedupe truth: one row per (supplier, mode), each with its
+    own verdict. The difference matters exactly once, and it is the picture the
+    map exists to draw — a Shenzhen supplier reachable by sea but refused by air
+    on hazmat grounds is *one clean reason* to the Explorer and *two lanes of
+    opposite colour* on a map. Collapsing that for the map would throw away the
+    only geography worth showing.
+    """
     kept: list[dict] = []
     rejected: list[Rejection] = []
+    lanes: list[dict] = []
+    holders = budget_holders or []
+    held = held_units or {}
+
+    def _lane(c: dict, verdict: str, constraint: str | None = None,
+              reason: str | None = None) -> None:
+        lanes.append({
+            "supplier_id": c["supplier_id"], "supplier_name": c["supplier_name"],
+            "mode": c.get("mode"),
+            "verdict": verdict,                    # considered | rejected
+            "constraint": constraint,
+            "human_reason": reason,
+            "unit_price": float(c.get("unit_price") or 0),
+            "freight_cost": float(c.get("freight_cost") or 0),
+            "available_quantity": int(c.get("available_quantity") or 0),
+            "min_order_quantity": int(c.get("min_order_quantity") or 0),
+            "lead_time_hours": (int(c.get("lead_time_days") or 0)
+                                + int(c.get("transit_days") or 0)) * 24,
+            "reliability": float(c.get("derived_reliability")
+                                 or c.get("effective_reliability") or 0),
+        })
+
+    def _who_holds() -> str:
+        """Name the incident that took the money, not just the shortfall.
+
+        "Above the Rs 80,000 remaining" tells an operator they lost. It does not
+        tell them to whom, or whether losing was right. A refusal that cannot
+        name the winner is not an explanation, it is an outcome.
+        """
+        if not holders:
+            return ""
+        h = holders[0]
+        who = h.get("incident_id") or "another incident"
+        what = h.get("component_name") or h.get("title") or "another line"
+        sev = f" {h.get('priority') or h.get('severity')}" \
+            if (h.get("priority") or h.get("severity")) else ""
+        extra = (f" and {len(holders) - 1} other incident(s)"
+                 if len(holders) > 1 else "")
+        # The margin, when both sides have a deadline. Naming the winner is the
+        # minimum; saying by how much it won is what turns a refusal into
+        # something the loser can actually check.
+        margin = ""
+        wh, mh = h.get("hours_to_stop"), hours_left
+        if wh is not None and mh is not None and float(mh) > float(wh):
+            margin = f", which stops {float(mh) - float(wh):.0f}h sooner"
+        return (f" Rs {h['amount']:,.0f} of the remaining budget is held by {who}"
+                f" for{sev} {what}{margin}{extra}.")
 
     for c in candidates:
         name = c["supplier_name"]
@@ -97,6 +161,8 @@ def _hard_filter(candidates: list[dict], *, shortfall: int, hours_left: float,
                 sid, name, "REQUIRED_CERTIFICATION",
                 f"{name} lacks {', '.join(missing)}.",
                 {"required": required_certs, "actual": sorted(certs), "missing": missing}))
+            _lane(c, "rejected", "REQUIRED_CERTIFICATION",
+                  f"{name} lacks {', '.join(missing)}.")
             continue
 
         if shortfall < c["min_order_quantity"]:
@@ -105,6 +171,9 @@ def _hard_filter(candidates: list[dict], *, shortfall: int, hours_left: float,
                 f"{name} requires a minimum order of {c['min_order_quantity']}, "
                 f"we need {shortfall}.",
                 {"moq": c["min_order_quantity"], "needed": shortfall}))
+            _lane(c, "rejected", "MIN_ORDER_QUANTITY",
+                  f"{name} requires a minimum order of {c['min_order_quantity']}, "
+                  f"we need {shortfall}.")
             continue
 
         if is_hazmat and c["mode"] == "AIR":
@@ -113,6 +182,9 @@ def _hard_filter(candidates: list[dict], *, shortfall: int, hours_left: float,
                 f"{name} can only reach the plant by air, and this component is "
                 f"hazmat. Air freight is prohibited, not merely expensive.",
                 {"mode": c["mode"], "is_hazmat": True}))
+            _lane(c, "rejected", "HAZMAT_NO_AIR",
+                  f"{name} can only reach the plant by air, and this component is "
+                  f"hazmat. Air freight is prohibited, not merely expensive.")
             continue
 
         # Lateness is a COST, not a prohibition. Hard-rejecting it here is what
@@ -120,17 +192,48 @@ def _hard_filter(candidates: list[dict], *, shortfall: int, hours_left: float,
         # late beats a stopped line every time. The scorer applies the penalty.
         lead_h = c["lead_time_days"] * 24 + c["transit_days"] * 24
 
+        # Units another in-flight incident has already reserved are not ours to
+        # size an order against. Plant stock was netted like this from the start
+        # (see NEED_SQL); supplier availability had no equivalent, so two
+        # incidents could each allocate the same 800 units.
+        reserved = held.get(sid, {})
+        gross_qty = int(c["available_quantity"])
+        net_qty = max(0, gross_qty - int(reserved.get("units", 0)))
+        if reserved.get("units"):
+            if net_qty <= 0:
+                rejected.append(Rejection(
+                    sid, name, "UNITS_CLAIMED",
+                    f"{name} has {gross_qty} units on the shelf, but all of them are "
+                    f"already reserved by {reserved.get('incident_id')}, which chose "
+                    f"them first. Selling the same stock twice is not an option we "
+                    f"have.",
+                    {"available": gross_qty, "reserved": int(reserved["units"]),
+                     "held_by": reserved.get("incident_id")}))
+                _lane(c, "rejected", "UNITS_CLAIMED",
+                      f"All {gross_qty} units are already reserved by "
+                      f"{reserved.get('incident_id')}, which chose them first.")
+                continue
+            c = {**c, "available_quantity": net_qty,
+                 "gross_available_quantity": gross_qty,
+                 "units_held_by": reserved.get("incident_id")}
+
         min_spend = min(shortfall, c["available_quantity"]) * float(c["unit_price"]) \
             + float(c["freight_cost"])
         if min_spend > budget_left:
             rejected.append(Rejection(
                 sid, name, "OVER_BUDGET",
                 f"{name} would cost at least Rs {min_spend:,.0f}, above the "
-                f"Rs {budget_left:,.0f} remaining emergency budget.",
-                {"min_spend": min_spend, "budget_left": budget_left}))
+                f"Rs {budget_left:,.0f} remaining emergency budget." + _who_holds(),
+                {"min_spend": min_spend, "budget_left": budget_left,
+                 "held_by": [h.get("incident_id") for h in holders],
+                 "held_amount": float(sum(h.get("amount", 0) for h in holders))}))
+            _lane(c, "rejected", "OVER_BUDGET",
+                  f"{name} would cost at least Rs {min_spend:,.0f}, above the "
+                  f"Rs {budget_left:,.0f} remaining emergency budget." + _who_holds())
             continue
 
         c = {**c, "lead_time_hours": lead_h}
+        _lane(c, "considered")
         kept.append(c)
 
     # A supplier with SEA and AIR lanes fails certification twice. Dedupe on
@@ -145,7 +248,25 @@ def _hard_filter(candidates: list[dict], *, shortfall: int, hours_left: float,
     # A supplier rejected on one lane but viable on another is not rejected.
     viable = {c["supplier_id"] for c in kept}
     unique = [r for r in unique if r.supplier_id not in viable]
-    return kept, unique
+    return kept, unique, lanes
+
+
+
+def _mark_chosen(lanes: list[dict], chosen: Option | None) -> list[dict]:
+    """Promote the winning plan's lanes from `considered` to `chosen`.
+
+    Matched on (supplier, mode) because a supplier can win on one lane while
+    another of its lanes was refused — the exact case the map exists to show.
+    """
+    if chosen is None:
+        return lanes
+    won = {(l.supplier_id, l.mode) for l in chosen.lines}
+    out = []
+    for ln in lanes:
+        if (ln["supplier_id"], ln["mode"]) in won and ln["verdict"] == "considered":
+            ln = {**ln, "verdict": "chosen"}
+        out.append(ln)
+    return out
 
 
 # -------------------------------------------------------------- scoring ----
@@ -205,19 +326,28 @@ def _line(c: dict, qty: int) -> Line:
 def solve(*, candidates: list[dict], shortfall: int, deadline, required_certs: list[str],
           is_hazmat: bool, priority: str, baseline_unit_price: float,
           budget_spent: float = 0.0,
+          budget_held: float = 0.0,
+          budget_holders: list[dict] | None = None,
+          held_units: dict[str, dict] | None = None,
           reschedulable: list[dict] | None = None) -> dict[str, Any]:
     """Return ranked options plus every rejection with its reason."""
 
     now = CLOCK.now()
     hours_left = hours_between(deadline, now)
-    budget_left = EMERGENCY_BUDGET_INR - budget_spent
+    # `budget_held` is money another in-flight incident has already committed to
+    # but not yet spent. Leaving it out is what let two concurrent incidents each
+    # approve Rs 4,00,000 against the same Rs 5,00,000 ceiling — both passing
+    # OVER_BUDGET, and the hard authority boundary turning out to be a
+    # suggestion. An option awaiting approval has taken the money out of reach.
+    budget_left = EMERGENCY_BUDGET_INR - budget_spent - budget_held
     baseline_value = shortfall * baseline_unit_price
 
     # Keep only the best (cheapest, fastest) lane per supplier before filtering,
     # but evaluate every lane so a hazmat/air rejection is still recorded.
-    kept, rejections = _hard_filter(
+    kept, rejections, lanes = _hard_filter(
         candidates, shortfall=shortfall, hours_left=hours_left,
-        required_certs=required_certs, is_hazmat=is_hazmat, budget_left=budget_left)
+        required_certs=required_certs, is_hazmat=is_hazmat, budget_left=budget_left,
+        budget_holders=budget_holders, held_units=held_units)
 
     best_per_supplier: dict[str, dict] = {}
     for c in kept:
@@ -334,10 +464,22 @@ def solve(*, candidates: list[dict], shortfall: int, deadline, required_certs: l
         "hours_left": round(hours_left, 2),
         "days_left_display": round(hours_left / 24, 1),
         "budget_left": budget_left,
+        # The ceiling, shown as its three terms rather than one number. An
+        # operator who cannot see what is held cannot tell a genuine refusal
+        # from a stale reservation.
+        "budget": {"total": float(EMERGENCY_BUDGET_INR), "placed": float(budget_spent),
+                   "held": float(budget_held), "left": budget_left,
+                   "holders": budget_holders or []},
         "approval_threshold": APPROVAL_THRESHOLD_INR,
         "chosen": chosen.to_dict() if chosen else None,
         "options": [o.to_dict() for o in options],
         "rejections": [asdict(r) for r in rejections],
+        # One row per (supplier, mode) with its own verdict — what the map draws.
+        # `chosen` is promoted from `considered` for the lanes in the winning
+        # plan, so a colour on the map means the same thing the Decision
+        # Explorer means by it. A judge who reads both must not find two
+        # explanations of one refusal.
+        "lanes": _mark_chosen(lanes, chosen),
         "weights": {"continuity": W_CONTINUITY, "cost": W_COST, "risk": W_RISK},
     }
 
@@ -435,9 +577,9 @@ async def solve_for_quantity(conn, production_order_id: str, quantity: int, *,
     rows = await conn.fetch(CANDIDATE_SQL, need["component_id"], need["warehouse_id"])
     if exclude:
         rows = [r for r in rows if r["supplier_id"] not in set(exclude)]
-    spent = float(await conn.fetchval(
-        "select coalesce(sum(total_value),0) from purchase_orders "
-        "where created_by_agent") or 0)
+    from . import claims
+    money = await claims.budget_state(conn)
+    reserved = await claims.held_units(conn, need["component_id"])
 
     result = solve(
         candidates=[dict(r) for r in rows],
@@ -447,7 +589,10 @@ async def solve_for_quantity(conn, production_order_id: str, quantity: int, *,
         is_hazmat=need["is_hazmat"],
         priority=need["priority"],
         baseline_unit_price=float(need["baseline_unit_price"]),
-        budget_spent=spent,
+        budget_spent=money["placed"],
+        budget_held=money["held"],
+        budget_holders=money["holders"],
+        held_units=reserved,
         # A top-up does not justify delaying somebody else's run.
         reschedulable=[],
     )
@@ -505,8 +650,11 @@ async def solve_for_production_order(
     dropped = sorted(set(exclude or []) & set(in_play))
     if dropped:
         rows = [r for r in rows if r["supplier_id"] not in set(exclude or [])]
-    spent = float(await conn.fetchval(
-        "select coalesce(sum(total_value),0) from purchase_orders where created_by_agent") or 0)
+    # Placed *and* held. Two incidents planning at once each used to read only
+    # what was placed, so each saw the full ceiling and both fitted under it.
+    from . import claims
+    money = await claims.budget_state(conn)
+    reserved = await claims.held_units(conn, need["component_id"])
 
     # Runs that could stand down. The delay we ask for is the slack they already
     # have, capped at a fortnight — never a delay we cannot justify to the
@@ -531,7 +679,10 @@ async def solve_for_production_order(
         is_hazmat=need["is_hazmat"],
         priority=need["priority"],
         baseline_unit_price=float(need["baseline_unit_price"]),
-        budget_spent=spent,
+        budget_spent=money["placed"],
+        budget_held=money["held"],
+        budget_holders=money["holders"],
+        held_units=reserved,
         reschedulable=reschedulable,
     )
     result["suppliers_in_play"] = [{"id": k, "name": v} for k, v in sorted(in_play.items())]

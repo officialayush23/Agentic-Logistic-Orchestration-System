@@ -1,7 +1,7 @@
 import { motion } from 'motion/react'
 import {
   Activity, Boxes, CheckCircle2, ClipboardCheck, Gauge, GitBranch, HelpCircle,
-  LayoutGrid, MessageSquare, PackageCheck, ScrollText, Sparkles,
+  Cpu, LayoutGrid, MessageSquare, PackageCheck, Plug, ScrollText, Sparkles,
   Moon, Scale, Sun, TriangleAlert, Warehouse,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -50,6 +50,12 @@ export const NAV_GROUPS = [
       { id: 'evaluation', label: 'Evaluation',  icon: ClipboardCheck, sub: 'did this run pass' },
       { id: 'scoring',    label: 'Performance', icon: Gauge,          sub: 'accuracy & rubric' },
       { id: 'auditlog',   label: 'Audit Trail',  icon: ScrollText,     sub: 'every run, filtered' },
+      // Where this system touches the outside world, and what each simulated
+      // seam stands in for. The first screen an enterprise buyer asks for.
+      { id: 'integrations', label: 'Integrations', icon: Plug,          sub: 'what is sandboxed' },
+      // Bring your own model account. Owner-only, and the key is encrypted
+      // before it is stored.
+      { id: 'llm',          label: 'Model & keys',  icon: Cpu,           sub: 'use your own LLM' },
     ],
   },
 ]

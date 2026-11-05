@@ -233,3 +233,91 @@ def _source_of(name: str) -> str | None:
         if (os.getenv(v) or "").strip():
             return v
     return None
+
+
+# ------------------------------------------------- a customer's own account ---
+
+
+#: How each vendor carries its credential. The base drivers above hard-code the
+#: platform key by class name (`Gemini.key`, `XAI.key`, `Bedrock.key`), so a
+#: subclass that merely sets `key` would NOT override it — the tenant would
+#: believe their key was in use while we quietly billed our own. Rewriting the
+#: auth header after the fact is the only way to be certain, so that is what
+#: this does.
+_AUTH = {
+    "gemini":    lambda k: {"x-goog-api-key": k},
+    "xai":       lambda k: {"Authorization": f"Bearer {k}"},
+    "openai":    lambda k: {"Authorization": f"Bearer {k}"},
+    "bedrock":   lambda k: {"Authorization": f"Bearer {k}"},
+    "anthropic": lambda k: {"x-api-key": k, "anthropic-version": "2023-06-01"},
+}
+
+#: Which existing driver's request shape each provider speaks.
+_SHAPE = {"gemini": "gemini", "xai": "xai", "openai": "xai",
+          "bedrock": "bedrock", "anthropic": "bedrock"}
+
+_DEFAULT_HOST = {
+    "gemini": "https://generativelanguage.googleapis.com",
+    "xai": "https://api.x.ai",
+    "openai": "https://api.openai.com",
+    "anthropic": "https://api.anthropic.com",
+    "bedrock": None,                       # regional; the stored base_url wins
+}
+
+_DEFAULT_MODEL = {
+    "gemini": "gemini-2.0-flash", "xai": "grok-3-mini",
+    "openai": "gpt-4o-mini", "anthropic": "claude-3-5-haiku-20241022",
+    "bedrock": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+}
+
+
+def for_tenant(cred: dict):
+    """A driver bound to one tenant's credential instead of the environment.
+
+    Returns `(driver, None)` or `(None, reason)`.
+
+    A fresh class per call rather than mutating a shared one: mutation would
+    leak one tenant's key into the next request served by the same process,
+    which is invisible in a demo and catastrophic in production.
+    """
+    name = (cred.get("provider") or "").lower()
+    shape = _SHAPE.get(name)
+    if shape is None:
+        return None, f"{name!r} is not a provider this system can call."
+
+    key = cred.get("api_key")
+    if not key:
+        return None, "That stored credential has no key in it."
+
+    base = ALL[shape]
+    model = (cred.get("model") or "").strip() or _DEFAULT_MODEL[name]
+    host = (cred.get("base_url") or "").strip() or _DEFAULT_HOST.get(name)
+    auth = _AUTH[name](key)
+
+    # OpenAI and Anthropic reuse another vendor's body shape but not its path.
+    _PATH = {"openai": "/v1/chat/completions", "anthropic": "/v1/messages"}
+
+    @staticmethod
+    def build(m, *, prompt, system, json_mode, max_tokens):
+        url, headers, body = base.build(m, prompt=prompt, system=system,
+                                        json_mode=json_mode, max_tokens=max_tokens)
+        # Replace the platform credential wholesale. `headers` from the base
+        # driver carries our key; none of it survives.
+        headers = {"Content-Type": "application/json", **auth}
+
+        if name in _PATH:
+            url = (host or "").rstrip("/") + _PATH[name]
+            if name == "anthropic":
+                body = {**body, "model": m}
+                body.pop("anthropic_version", None)
+        elif host:
+            from urllib.parse import urlparse
+            url = host.rstrip("/") + urlparse(url).path
+        return url, headers, body
+
+    return type(f"Tenant_{name}", (base,), {
+        "name": f"{name} (customer key)",
+        "key": key,
+        "models": [model],
+        "build": build,
+    }), None

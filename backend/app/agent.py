@@ -481,6 +481,29 @@ async def _plan_and_validate(conn, incident_id: str, *, prefer_label: str | None
     st["result"] = result
     st["narrative"] = narrative
 
+    # ---- reserve, before anything else can read the same money --------------
+    #
+    # The claim is taken here — at *chosen*, not at *placed*. Everything between
+    # those two points is the window another incident used to plan against money
+    # this one had already committed to, and "waiting for a human to approve" is
+    # the longest part of that window. A re-plan releases first so the incident
+    # never holds two reservations for one decision.
+    from . import claims
+    await claims.release_for(conn, incident_id,
+                             "Re-planned — the previous reservation no longer "
+                             "describes what this incident intends to do.")
+    _lines = chosen.get("lines") or []
+    await claims.hold(
+        conn, incident_id=incident_id,
+        budget=float(chosen.get("total_cost") or 0),
+        units=int(sum(int(l.get("quantity") or 0) for l in _lines)) if _lines else 0,
+        supplier_id=(_lines[0].get("supplier_id") if _lines else None),
+        component_id=result.get("context", {}).get("component_id"),
+        scenario_run_id=st.get("run_id") or (run_context() or {}).get("run_id"),
+        reason=f"Chosen plan: {chosen['label']}."
+               + (" Awaiting approval." if chosen["requires_approval"]
+                  else " Inside my authority, placing now."))
+
     await emit(conn, incident_id=incident_id, actor="agent", event_type="OPTION_SELECTED",
                human_summary=f"Recovery plan: {chosen['label']} — "
                              f"Rs {chosen['total_cost']:,.0f}.",
@@ -611,6 +634,14 @@ async def execute(conn, incident_id: str) -> None:
             kind="rfq", context={"component_name": st.get("component_name"),
                                  "quantity": line["quantity"], "needed_by": "confirmed order"})
 
+    if created:
+        # The order exists now, so `purchase_orders` counts this money. Leaving
+        # the hold open as well would charge the same rupee twice and start
+        # refusing options that are genuinely affordable — over-strictness is a
+        # quieter failure than the leak, but it is still wrong.
+        from . import claims
+        await claims.mark_placed(conn, incident_id)
+
     await _step(conn, incident_id,
                 f"Created {len(created)} recovery purchase order(s): {', '.join(created)}.")
     await emit(conn, incident_id=incident_id, actor="agent", event_type="ERP_UPDATED",
@@ -641,6 +672,14 @@ async def resume(conn, incident_id: str, *, decision: str,
         await conn.execute(
             "update recovery_plans set status='rejected', decided_at=now() where id=$1",
             st.get("plan_id"))
+        # Give the money and units back the moment the decision lands. A hold
+        # that outlives the plan it was taken for starves every other incident
+        # for a decision that has already been made — the same leak as never
+        # holding at all, only quieter and harder to spot.
+        from . import claims
+        await claims.release_for(
+            conn, incident_id,
+            f"Plan rejected by the operator{': ' + note if note else ''}.")
         await _step(conn, incident_id,
                     f"Human rejected the plan{': ' + note if note else ''}. Replanning.",
                     status="warning")

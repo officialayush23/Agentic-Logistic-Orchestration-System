@@ -1,5 +1,7 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import App from './App.jsx'
+import Login from '@/components/Login'
+import { api, auth } from '@/lib/api'
 import { Toaster } from '@/components/ui/sonner'
 
 /**
@@ -42,6 +44,52 @@ function Shell({ children }) {
   )
 }
 
+/**
+ * The auth gate.
+ *
+ * Three states, and conflating any two of them is a bug someone has to debug at
+ * a demo: `checking` (we have a token and are asking the server whether it is
+ * still good), `out` (no valid token), `in` (verified). Rendering the app while
+ * checking produces a screen full of 401s; rendering the login screen while
+ * checking makes a valid session flash the login form on every refresh.
+ *
+ * Verification is a real round trip rather than "a token exists in
+ * localStorage", because a revoked or expired token is present and useless, and
+ * the only authority on that is the server.
+ */
+function Gated({ children }) {
+  const [state, setState] = useState(() => (auth.get() ? 'checking' : 'out'))
+  const [who, setWho] = useState(null)
+
+  useEffect(() => {
+    if (state !== 'checking') return
+    let alive = true
+    api.me()
+      .then((me) => { if (alive) { setWho(me); setState('in') } })
+      .catch(() => { if (alive) { auth.clear(); setState('out') } })
+    return () => { alive = false }
+  }, [state])
+
+  // A 401 from anywhere in the app clears the token; this brings the gate back
+  // in step without every component having to know about sessions.
+  useEffect(() => {
+    const onStorage = () => { if (!auth.get()) { setWho(null); setState('out') } }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  const onAuthed = useCallback(() => setState('checking'), [])
+
+  if (state === 'checking') {
+    return (
+      <div className="text-muted-foreground flex h-screen items-center justify-center
+                      text-[13px]">checking your session…</div>
+    )
+  }
+  if (state === 'out') return <Login onAuthed={onAuthed} />
+  return typeof children === 'function' ? children(who) : children
+}
+
 export default function Root() {
   const path = typeof window !== 'undefined' ? window.location.pathname : '/'
 
@@ -50,9 +98,11 @@ export default function Root() {
     const id = decodeURIComponent(wh[1] || '') || 'Pune-Plant-1'
     return (
       <Shell>
-        <Suspense fallback={<Loading what="the warehouse" />}>
-          <WarehousePortal warehouseId={id} />
-        </Suspense>
+        <Gated>
+          <Suspense fallback={<Loading what="the warehouse" />}>
+            <WarehousePortal warehouseId={id} />
+          </Suspense>
+        </Gated>
       </Shell>
     )
   }
@@ -62,12 +112,19 @@ export default function Root() {
     const id = decodeURIComponent(sup[1] || '').replace(/\/$/, '')
     return (
       <Shell>
-        <Suspense fallback={<Loading what={id ? id : 'the supplier list'} />}>
-          {id ? <SupplierPortal supplierId={id.toUpperCase()} /> : <SupplierDirectory />}
-        </Suspense>
+        <Gated>
+          <Suspense fallback={<Loading what={id ? id : 'the supplier list'} />}>
+            {id ? <SupplierPortal supplierId={id.toUpperCase()} /> : <SupplierDirectory />}
+          </Suspense>
+        </Gated>
       </Shell>
     )
   }
 
-  return <Shell><App /></Shell>
+  // Operations is the only window behind the sign-in gate for now. The supplier
+  // and warehouse portals are counterparty surfaces and get their own scoped
+  // tokens (auth_tokens.kind = 'supplier' | 'warehouse'), which is a different
+  // flow from a member signing in — a supplier is not a member of the tenant,
+  // and giving them a session would show them every other supplier's pricing.
+  return <Shell><Gated><App /></Gated></Shell>
 }

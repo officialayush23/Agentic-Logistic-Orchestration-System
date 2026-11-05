@@ -11,6 +11,13 @@ import Communications from '@/components/Communications'
 import WarehouseOps from '@/components/WarehouseOps'
 import Approvals from '@/components/Approvals'
 import Recovery from '@/components/Recovery'
+import AttentionCard from '@/components/AttentionCard'
+import EventStream from '@/components/EventStream'
+import ChaosPanel from '@/components/ChaosPanel'
+import Integrations from '@/components/Integrations'
+import LlmSettings from '@/components/LlmSettings'
+import IncidentTable from '@/components/IncidentTable'
+import StalenessBanner from '@/components/StalenessBanner'
 import NetworkFlow from '@/components/NetworkFlow'
 import WorldState from '@/components/WorldState'
 import DecisionExplorer from '@/components/DecisionExplorer'
@@ -37,6 +44,10 @@ import { inr } from '@/lib/format'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  ResizableHandle, ResizablePanel, ResizablePanelGroup,
+} from '@/components/ui/resizable'
+import { usePanelLayout } from '@/lib/panelLayout'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
@@ -50,14 +61,17 @@ import { GitBranch as SchematicIcon, Globe2 } from 'lucide-react'
 const MapView = lazy(() => import('@/components/MapView'))
 
 function LiveNetwork({ revision }) {
+  const networkLayout = usePanelLayout('network')
   const [mode, setMode] = useState('schematic')
   const [mapNote, setMapNote] = useState(null)
 
   const fallback = useCallback((why) => { setMapNote(why); setMode('schematic') }, [])
 
   return (
-    <div className="grid h-full grid-cols-12">
-      <div className="relative col-span-8 min-h-0 border-r">
+    <ResizablePanelGroup direction="horizontal" {...networkLayout}
+                         className="h-full">
+      <ResizablePanel id="canvas" order={1} defaultSize="68" minSize="30"
+                      className="relative min-h-0">
         <div className="absolute top-3 right-3 z-30 flex items-center gap-1 rounded-lg
                         border p-0.5 backdrop-blur-md
                         bg-[color-mix(in_oklab,var(--card)_70%,transparent)]">
@@ -91,11 +105,16 @@ function LiveNetwork({ revision }) {
         ) : (
           <NetworkFlow revision={revision} />
         )}
-      </div>
-      <div className="glass-panel col-span-4 min-h-0">
+      </ResizablePanel>
+      <ResizableHandle withHandle />
+      {/* Collapsible, because the whole point of a map is sometimes to look at
+          the map. Double-click the handle and the canvas takes the screen. */}
+      <ResizablePanel id="worldstate" order={2} defaultSize="32" minSize="0"
+                      collapsible collapsedSize="0"
+                      className="glass-panel min-h-0">
         <WorldState revision={revision} />
-      </div>
-    </div>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   )
 }
 
@@ -114,9 +133,13 @@ const SUBTITLE = {
   chat:      'Ask about this run \u2014 it reads the live state and changes nothing',
   auditlog:  'Every event, every actor, every run \u2014 append-only',
   warehouse: 'Physical reality at Pune Plant',
+  integrations: 'Every seam where this touches the outside world \u2014 and what each one stands in for',
+  llm:       'Point the agent at your own model account \u2014 your billing, your provider agreement',
 }
 
 function Overview({ events, revision, onGoto, onRunSim }) {
+  const overviewLayout = usePanelLayout('overview')
+  const agentRailLayout = usePanelLayout('agentrail')
   const { data: kpi } = useQuery({
     queryKey: ['kpis'], queryFn: api.kpis})
   const { data: ctx } = useQuery({ queryKey: ['context'], queryFn: api.context })
@@ -138,27 +161,57 @@ function Overview({ events, revision, onGoto, onRunSim }) {
   const cover = now?.min_coverage_days ?? null
 
   if (!hasRun) {
+    // The buttons go *here* as well as on the live screen, because this is
+    // where someone seeing the product starts. An empty state whose only
+    // instruction is "run a scenario" and whose only control is a link to a
+    // builder asks them to compose something before anything has happened.
     return (
-      <NoRun
-        title="No active test run"
-        what="Nothing has been injected yet, so there is no incident, no decision and
-              no agent activity to show. The supplier network below is the static
-              baseline — it is the world a test will run against, not a result."
-        onRun={onRunSim}
-        baseline="Baseline topology loaded · no active disruption" />
+      <div className="flex h-full flex-col items-center justify-center gap-6 p-8">
+        <NoRun
+          title="No active test run"
+          what="Nothing has been injected yet, so there is no incident, no decision and
+                no agent activity to show. The supplier network is loaded — it is the
+                world a test will run against, not a result."
+          baseline="Baseline topology loaded · no active disruption" />
+        <div className="w-full max-w-2xl">
+          <ChaosPanel onOpenBuilder={onRunSim} />
+        </div>
+      </div>
     )
   }
 
   return (
-    <div className="grid h-full grid-cols-12">
+    /* Three panels, all resizable, the outer two collapsible.
+       A fixed 3/6/3 grid meant the centre column — the one carrying the actual
+       story — got half the screen whatever was in it, and the rails could not
+       be pushed out of the way when they were empty. Drag a handle to
+       re-proportion; double-click one to collapse that rail entirely. The sizes
+       persist per browser, because an operator who has set up their screen
+       should not have to do it again after a refresh. */
+    <ResizablePanelGroup direction="horizontal" {...overviewLayout}
+                         className="h-full">
       {/* LEFT — what needs me */}
-      <div className="col-span-3 min-h-0 border-r">
+      <ResizablePanel id="queue" order={1} defaultSize="25" minSize="14"
+                      collapsible collapsedSize="0"
+                      className="min-h-0">
         <ActionQueue onGoto={onGoto} />
-      </div>
+      </ResizablePanel>
+      <ResizableHandle withHandle />
 
       {/* CENTRE — one operational story */}
-      <ScrollArea className="col-span-6 min-h-0">
+      <ResizablePanel id="story" order={2} defaultSize="50" minSize="30"
+                      className="min-h-0">
+      <ScrollArea className="h-full min-h-0">
         <div className="flex min-h-full flex-col gap-6 p-7">
+          {/* Still reachable mid-run: the interesting demo is two disruptions
+              landing while the agent is already working one. */}
+          <ChaosPanel onOpenBuilder={onRunSim} compact />
+
+          {/* Above the story, because "what do I do next" is the question an
+              operator arrives with. Everything below answers "what is true",
+              which is a different and later question. */}
+          <AttentionCard onGoto={onGoto} />
+
           {atRisk ? (
             <div>
               <div className="flex items-center gap-2.5">
@@ -292,16 +345,35 @@ function Overview({ events, revision, onGoto, onRunSim }) {
           </Card>
         </div>
       </ScrollArea>
+      </ResizablePanel>
+      <ResizableHandle withHandle />
 
-      {/* RIGHT — what the AI is doing */}
-      <div className="glass-panel col-span-3 min-h-0 border-l">
-        <AgentStatus events={events} onGoto={onGoto} />
-      </div>
-    </div>
+      {/* RIGHT — what the AI is doing, and the trace of it doing so.
+          Status answers "where is it up to"; the stream answers "what is it
+          actually running". Together they are the difference between a
+          dashboard that reports and one you can watch think.
+          Split vertically and resizable too: while the agent is working you
+          want the trace tall, and once it settles you want the status. */}
+      <ResizablePanel id="agent" order={3} defaultSize="25" minSize="14"
+                      collapsible collapsedSize="0"
+                      className="glass-panel min-h-0">
+        <ResizablePanelGroup direction="vertical" {...agentRailLayout}>
+          <ResizablePanel id="status" defaultSize="45" minSize="12" className="min-h-0">
+            <AgentStatus events={events} onGoto={onGoto} />
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel id="trace" defaultSize="55" minSize="12" className="min-h-0">
+            <EventStream events={events} />
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   )
 }
 
 export default function App() {
+  const incidentsLayout = usePanelLayout('incidents')
+  const decisionsLayout = usePanelLayout('decisions')
   const { events, clock, status, revision } = useAgentStream()
   const { theme, toggle } = useTheme()
   const [page, setPage] = useState('command')
@@ -382,6 +454,9 @@ export default function App() {
         />
 
         <BusyBar />
+        {/* Silent unless there is something to say. A banner that is always
+            visible is furniture, and furniture is not read. */}
+        <StalenessBanner />
         <NowBar onGoto={setPage} />
 
         <AnimatePresence mode="wait">
@@ -398,25 +473,38 @@ export default function App() {
             {page === 'network' && <LiveNetwork revision={revision} />}
 
             {page === 'incidents' && (
-              <div className="grid h-full grid-cols-12">
-                <div className="col-span-5 min-h-0 border-r">
-                  <IncidentPanel revision={revision} onOpenDecision={() => setPage('decisions')} />
-                </div>
-                <div className="col-span-7 min-h-0">
+              <ResizablePanelGroup direction="horizontal" {...incidentsLayout}
+                                   className="h-full">
+                {/* The list first, filterable. The single-incident panel
+                    answers "what is the worst one"; this answers "show me the
+                    critical ones that are still open", which is the question
+                    someone with eight incidents actually has. */}
+                <ResizablePanel id="list" defaultSize="42" minSize="20" className="min-h-0">
+                  <IncidentTable onOpen={() => setPage('recovery')} />
+                </ResizablePanel>
+                <ResizableHandle withHandle />
+                <ResizablePanel id="activity" defaultSize="58" minSize="25" collapsible
+                                collapsedSize="0" className="min-h-0">
                   <AgentActivity events={events} />
-                </div>
-              </div>
+                </ResizablePanel>
+              </ResizablePanelGroup>
             )}
 
+            {page === 'integrations' && <Integrations />}
+            {page === 'llm' && <LlmSettings />}
+
             {page === 'decisions' && (
-              <div className="grid h-full grid-cols-12">
-                <div className="col-span-8 min-h-0 border-r">
+              <ResizablePanelGroup direction="horizontal" {...decisionsLayout}
+                                   className="h-full">
+                <ResizablePanel id="explorer" defaultSize="68" minSize="35" className="min-h-0">
                   <DecisionExplorer onApprove={() => setPage('approvals')} />
-                </div>
-                <div className="glass-panel col-span-4 min-h-0">
+                </ResizablePanel>
+                <ResizableHandle withHandle />
+                <ResizablePanel id="incident" defaultSize="32" minSize="0" collapsible
+                                collapsedSize="0" className="glass-panel min-h-0">
                   <IncidentPanel revision={revision} />
-                </div>
-              </div>
+                </ResizablePanel>
+              </ResizablePanelGroup>
             )}
 
             {page === 'recovery' && <Recovery />}

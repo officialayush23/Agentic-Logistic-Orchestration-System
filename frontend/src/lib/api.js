@@ -14,12 +14,51 @@ export const BASE = (
 /** Join without ever doubling or dropping the separator. */
 export const apiUrl = (path) => `${BASE}/${String(path).replace(/^\/+/, '')}`
 
+/**
+ * The bearer token, in one place.
+ *
+ * localStorage rather than a cookie because the API is on a different origin
+ * (Vercel → Render), and a cross-site cookie needs SameSite=None plus a shared
+ * parent domain we do not have. The trade is XSS exposure, which is the same
+ * trade every SPA on a split origin makes; the mitigation is that the token is
+ * short-lived and revocable server-side, not that it is hidden.
+ */
+const TOKEN_KEY = 'disruptionops.token'
+
+export const auth = {
+  get: () => { try { return localStorage.getItem(TOKEN_KEY) } catch { return null } },
+  set: (t) => { try { t ? localStorage.setItem(TOKEN_KEY, t)
+                        : localStorage.removeItem(TOKEN_KEY) } catch { /* private mode */ } },
+  clear: () => auth.set(null),
+}
+
+/** The websocket cannot set headers, so its token rides in the query string. */
+export const wsUrl = () => {
+  const t = auth.get()
+  return BASE.replace(/^http/, 'ws') + '/ws' + (t ? `?token=${encodeURIComponent(t)}` : '')
+}
 export const WS_URL = BASE.replace(/^http/, 'ws') + '/ws'
 
+/** Raised on 401 so the shell can show the login screen instead of an error toast. */
+export class Unauthorized extends Error {}
+
 async function req(path, opts = {}) {
+  const token = auth.get()
   const res = await fetch(apiUrl(path), {
-    headers: { 'Content-Type': 'application/json' }, ...opts,
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(opts.headers || {}),
+    },
   })
+  if (res.status === 401) {
+    // The token is gone, expired or revoked. Drop it so the app stops retrying
+    // with a credential the server has already refused — a dashboard that keeps
+    // firing 401s every twelve seconds is how a rate limit gets discovered.
+    auth.clear()
+    throw new Unauthorized('Your session has ended. Please sign in again.')
+  }
   if (!res.ok) {
     const body = await res.text()
     let detail = body
@@ -31,6 +70,12 @@ async function req(path, opts = {}) {
 const post = (p, b) => req(p, { method: 'POST', ...(b ? { body: JSON.stringify(b) } : {}) })
 
 export const api = {
+  // identity
+  login:       (b)         => post('/api/auth/login', b),
+  signup:      (b)         => post('/api/auth/signup', b),
+  logout:      ()          => post('/api/auth/logout'),
+  me:          ()          => req('/api/auth/me'),
+
   // world
   health:      ()          => req('/api/health'),
   context:     ()          => req('/api/context'),
@@ -42,6 +87,23 @@ export const api = {
   // The plan and how much of it has happened. Derived server-side from records
   // the acting path already wrote — this endpoint reads, it never advances.
   recovery:    ()          => req('/api/recovery'),
+  // Every lane the solver looked at, with its verdict and its geography.
+  routes:      (poId)      => req('/api/routes'
+                                  + (poId ? `?production_order_id=${encodeURIComponent(poId)}` : '')),
+  budget:      ()          => req('/api/budget'),
+  // Which problem the agent works next, and the deterministic rule that
+  // decided it. The rule ships with the queue — a ranking nobody can read
+  // is a black box.
+  triage:      ()          => req('/api/triage'),
+
+  // Bring-your-own model key. There is deliberately no endpoint that returns
+  // the key — `llmSettings` describes it (provider, last four, last verified)
+  // and nothing more.
+  llmSettings:     ()      => req('/api/settings/llm'),
+  llmSettingsSave: (b)     => req('/api/settings/llm', {
+                                method: 'PUT', body: JSON.stringify(b) }),
+  llmSettingsClear:()      => req('/api/settings/llm', { method: 'DELETE' }),
+  llmSettingsTest: ()      => post('/api/settings/llm/test'),
   audit:       (after = 0) => req(`/api/audit?after=${after}&limit=300`),
 
   // simulation

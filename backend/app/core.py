@@ -65,9 +65,87 @@ async def db() -> asyncpg.Pool:
     return _pool
 
 
+# ------------------------------------------------------------- tenancy ------
+#
+# Which organisation the current unit of work belongs to. Set once per request
+# (or per background task) and read by `db_conn` on every acquire, so that not
+# one of the ~300 SQL statements in this codebase has to mention it. Postgres
+# does the filtering, via the row-level-security policies in migration 0010.
+#
+# A ContextVar rather than a global because two tenants can be in flight in the
+# same process at the same moment, and asyncio tasks inherit the context they
+# were created in — which is exactly the semantics the agent needs, since its
+# tasks are spawned inside a request and outlive it.
+
+CURRENT_ORG: ContextVar[str | None] = ContextVar("current_org", default=None)
+ORG_BYPASS: ContextVar[bool] = ContextVar("org_bypass", default=False)
+
+
+def set_org(org_id: str | None) -> None:
+    CURRENT_ORG.set(org_id)
+
+
+def current_org() -> str | None:
+    return CURRENT_ORG.get()
+
+
+@asynccontextmanager
+async def as_system():
+    """Run without tenant scoping — signup, login, migrations, support work.
+
+    Narrow on purpose. The login path has to read a user before it knows which
+    organisation that user belongs to, and creating an organisation obviously
+    cannot be scoped to one. Everything else stays inside a tenant.
+    """
+    token = ORG_BYPASS.set(True)
+    try:
+        yield
+    finally:
+        ORG_BYPASS.reset(token)
+
+
+class TenancyNotSet(RuntimeError):
+    """No organisation in context and no bypass.
+
+    Raised rather than defaulted. A default tenant is how one customer ends up
+    reading another's supply chain, and the only safe value for "which company's
+    data is this" is the one that was explicitly established.
+    """
+
+
 def _conn_key(conn) -> int:
     """Identity of the real connection behind a pool proxy."""
     return id(getattr(conn, "_con", conn))
+
+
+async def _apply_tenancy(conn) -> None:
+    """Stamp the connection with the current tenant before the handler runs."""
+    org = CURRENT_ORG.get()
+    bypass = ORG_BYPASS.get()
+    if not org and not bypass:
+        raise TenancyNotSet(
+            "No organisation is in context for this query. Set one with "
+            "core.set_org(...) — usually via the auth dependency — or use "
+            "core.as_system() for the signup and login paths.")
+    # Session-level, not transaction-level: the handler may run several
+    # statements and its own transactions. Reset on release, below, because a
+    # pooled connection carrying the last request's tenant is the worst bug
+    # this file could have.
+    await conn.execute(
+        "select set_config('app.org_id', $1, false), "
+        "       set_config('app.org_bypass', $2, false)",
+        org or "", "on" if bypass else "off")
+
+
+async def _clear_tenancy(conn) -> None:
+    try:
+        await conn.execute(
+            "select set_config('app.org_id', '', false), "
+            "       set_config('app.org_bypass', 'off', false)")
+    except Exception:                              # noqa: BLE001
+        # The socket is already gone; the connection will be discarded rather
+        # than reused, so there is nothing left to leak the tenant into.
+        pass
 
 
 @asynccontextmanager
@@ -109,8 +187,10 @@ async def db_conn():
                 continue
 
         try:
+            await _apply_tenancy(conn)
             yield conn
         finally:
+            await _clear_tenancy(conn)
             _last_used[_conn_key(conn)] = time.monotonic()
             if len(_last_used) > 64:                # paranoia, not bookkeeping
                 _last_used.clear()

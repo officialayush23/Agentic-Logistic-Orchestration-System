@@ -8,10 +8,32 @@
 -- HISTORY and are deliberately NOT truncated here: a demo reset must not
 -- destroy the run comparisons you are tuning against. The API's
 -- POST /api/scenarios/reset?mode=hard clears history separately, on purpose.
-truncate supplier_memory, approvals, quotes, rfqs, messages, incidents,
-         shipment_tracking, purchase_orders, production_orders, inventory,
-         supplier_catalog, supplier_lanes, suppliers, components, warehouses
-         restart identity cascade;
+-- DELETE, not TRUNCATE.
+--
+-- TRUNCATE is a table-level operation and ignores row-level security entirely:
+-- a policy filtering by org_id gets no say in it. Inside a multi-tenant
+-- deployment, one demo tenant re-seeding its world would have emptied these
+-- tables for every customer on the box. DELETE goes through the policy, so it
+-- can only ever reach the current tenant's rows — the same statement is safe on
+-- a shared database and still does exactly what the demo needs.
+--
+-- Order matters in a way TRUNCATE ... CASCADE hid: children before parents.
+delete from supplier_memory;
+delete from approvals;
+delete from quotes;
+delete from rfqs;
+delete from messages;
+delete from shipment_tracking;
+delete from purchase_orders;
+delete from production_orders;
+delete from incidents;
+delete from inventory;
+delete from supplier_catalog;
+delete from supplier_lanes;
+delete from suppliers;
+delete from bill_of_materials;
+delete from components;
+delete from warehouses;
 
 -- ---------- warehouses ------------------------------------------------------
 

@@ -61,7 +61,38 @@ async def _call(prompt: str, *, system: str | None = None,
     """
     if not LLM_ENABLED:
         return None
-    driver, why = providers.resolve()
+
+    # ---- whose key, and may we use it -------------------------------------
+    #
+    # Three outcomes, in order of preference: the tenant's own key (unmetered,
+    # bills to them), our key while their trial allowance lasts, or nothing.
+    #
+    # "Nothing" is a normal outcome here, not an error. Every caller in this
+    # module already handles a `None` return by falling back to the
+    # deterministic answer, because the model was always allowed to be
+    # unreachable — so an exhausted allowance travels the exact path a network
+    # timeout does, and no feature has to learn about billing.
+    tenant, source, blocked = None, "platform", None
+    try:
+        from .core import current_org, db_conn
+        if current_org():
+            from . import llm_settings
+            async with db_conn() as conn:
+                tenant, source, blocked = await llm_settings.resolve_for_call(conn)
+    except Exception as exc:                      # noqa: BLE001
+        # Never let credential resolution break a call that would otherwise
+        # work. A broken quota table must not take the agent down with it.
+        _stats["last_error"] = f"credential lookup failed: {type(exc).__name__}"
+
+    if blocked:
+        _stats["last_error"] = blocked
+        _stats["blocked"] = _stats.get("blocked", 0) + 1
+        return None
+
+    if tenant:
+        driver, why = providers.for_tenant(tenant)
+    else:
+        driver, why = providers.resolve()
     if driver is None:
         _stats["last_error"] = why
         return None
@@ -87,6 +118,17 @@ async def _call(prompt: str, *, system: str | None = None,
                     _stats["calls"] += 1
                     _stats["total_ms"] += (time.perf_counter() - started) * 1000
                     _stats["last_error"] = None
+                    # Meter only what we paid for. A tenant on their own key is
+                    # not counted — we are not funding those calls, and metering
+                    # them would invite the reasonable question of why.
+                    if source == "platform":
+                        try:
+                            from .core import db_conn
+                            from . import llm_settings
+                            async with db_conn() as conn:
+                                await llm_settings.record_platform_call(conn)
+                        except Exception:             # noqa: BLE001
+                            pass                       # never fail a good answer
                     try:
                         return driver.extract(r.json())
                     except Exception as exc:            # noqa: BLE001

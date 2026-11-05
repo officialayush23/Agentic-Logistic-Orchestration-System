@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import Root from './Root.jsx'
+import { Unauthorized } from './lib/api'
 import { hydrate, persist } from './lib/persist.js'
 import './index.css'
 
@@ -45,6 +46,10 @@ const queryClient = new QueryClient({
     },
     onError: (error, _vars, _ctx, mutation) => {
       if (mutation?.options?.meta?.silent) return
+      // A dead session is not a failed action — the gate is already showing the
+      // sign-in screen. Toasting "the server rejected the request" on top of it
+      // describes the wrong problem and hides the real instruction.
+      if (error instanceof Unauthorized) return
       toast.error(String(error?.message || error), {
         description: 'Nothing was changed. The server rejected the request.',
       })

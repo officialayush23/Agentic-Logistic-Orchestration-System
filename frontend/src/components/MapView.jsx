@@ -40,6 +40,16 @@ function laneState(supplierId, shipments) {
   return 'open'
 }
 
+/** Verdict decides colour. Mode decides shape. Never the same channel. */
+const VERDICT_TONE = {
+  chosen:     '#84cc16',   // lime — the one that won
+  considered: '#38bdf8',   // blue — survived the filters, lost on score
+  rejected:   '#f43f5e',   // red  — never reached scoring
+}
+
+/** Sea bends most, air flies straight-ish, road is short. Shape carries mode. */
+const MODE_BEND = { SEA: 0.34, AIR: 0.10, RAIL: 0.18, ROAD: 0.08 }
+
 /** Great-circle-ish arc so long lanes read as routes rather than chords. */
 function arc(from, to, bend = 0.22, steps = 48) {
   const [x1, y1] = from, [x2, y2] = to
@@ -68,6 +78,12 @@ export default function MapView({ revision, onFallback }) {
 
   const { data } = useQuery({
     queryKey: ['network'], queryFn: api.network})
+  // Decision lanes: every route the solver looked at, with its verdict. The
+  // shipment view shows what survived; this shows what was refused, which is
+  // the half with the reasoning in it.
+  const { data: routes } = useQuery({ queryKey: ['routes'], queryFn: () => api.routes() })
+  const [hovered, setHovered] = useState(null)
+  const [showDecisions, setShowDecisions] = useState(true)
 
   const dark = typeof document !== 'undefined' &&
     document.documentElement.classList.contains('dark')
@@ -159,6 +175,111 @@ export default function MapView({ revision, onFallback }) {
       })
     }
 
+    // ---- decision lanes -------------------------------------------------
+    //
+    // Colour is the VERDICT, shape is the MODE, and they never share a channel:
+    // if colour meant both, a rejected sea lane and a chosen air lane would be
+    // indistinguishable at a glance, which is the one comparison this view
+    // exists to make.
+    //
+    // Rejected lanes are drawn by default. Hiding them to keep the map tidy
+    // throws away the entire argument — the refusals *are* the reasoning.
+    // Two lanes between the same two points with the same mode produce the
+    // same arc, and the one drawn second is unhoverable — which in practice
+    // meant a CHOSEN lane hiding under a REJECTED one, i.e. the single most
+    // important line on the map being the one you could not read. Fan them
+    // apart by their index within the pair so every lane has its own path.
+    const bySupplier = {}
+    for (const ln of routes?.lanes ?? []) {
+      (bySupplier[ln.supplier_id] ??= []).push(ln)
+    }
+    const fanOffset = (ln) => {
+      const siblings = bySupplier[ln.supplier_id] ?? []
+      if (siblings.length < 2) return 0
+      const i = siblings.indexOf(ln)
+      // Symmetric spread around the base bend: -0.06, +0.06, -0.12, +0.12 …
+      const step = Math.ceil((i + 1) / 2) * 0.06
+      return i % 2 === 0 ? -step : step
+    }
+
+    const decisionFeatures = showDecisions
+      ? (routes?.lanes ?? []).map((ln) => ({
+          type: 'Feature',
+          properties: {
+            verdict: ln.verdict,
+            color: VERDICT_TONE[ln.verdict] ?? VERDICT_TONE.considered,
+            mode: ln.mode,
+            supplier: ln.supplier_id,
+            // The hover text. For a rejection this is the SAME string the
+            // Decision Explorer prints, because it has the same author —
+            // solver._hard_filter. A judge reading the map and then the
+            // explorer must not find two explanations of one refusal.
+            why: ln.verdict === 'rejected'
+              ? ln.human_reason
+              : `${ln.mode} · ${Math.round((ln.lead_time_hours ?? 0) / 24)}d transit · `
+                + `${inr(ln.landed_cost)} landed · reliability `
+                + `${(ln.reliability ?? 0).toFixed(2)}`,
+            constraint: ln.constraint ?? '',
+            name: ln.supplier_name,
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: arc([ln.from.lng, ln.from.lat], [ln.to.lng, ln.to.lat],
+                             (MODE_BEND[ln.mode] ?? 0.22) + fanOffset(ln)),
+          },
+        }))
+      : []
+
+    // Paint order inside one layer follows source order, so rejected goes down
+    // first and chosen last — the winning lane is never buried.
+    const PAINT_ORDER = { rejected: 0, considered: 1, chosen: 2 }
+    decisionFeatures.sort((a, b) =>
+      (PAINT_ORDER[a.properties.verdict] ?? 0) - (PAINT_ORDER[b.properties.verdict] ?? 0))
+
+    const decisionGeo = { type: 'FeatureCollection', features: decisionFeatures }
+
+    if (m.getSource('decisions')) {
+      m.getSource('decisions').setData(decisionGeo)
+    } else {
+      m.addSource('decisions', { type: 'geojson', data: decisionGeo })
+      m.addLayer({
+        id: 'decisions-line', type: 'line', source: 'decisions',
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': ['case', ['==', ['get', 'verdict'], 'chosen'], 3.4, 1.8],
+          'line-opacity': ['case', ['==', ['get', 'verdict'], 'rejected'], 0.42, 0.95],
+          'line-dasharray': [
+            'match', ['get', 'mode'],
+            'AIR', ['literal', [4, 3]],
+            'RAIL', ['literal', [2, 2]],
+            'ROAD', ['literal', [1, 2]],
+            ['literal', [1, 0]],          // SEA — solid
+          ],
+        },
+      })
+      // A fat invisible line so a 1.8px lane is actually hoverable. Asking
+      // someone to hit a hairline with a mouse is not an interaction.
+      m.addLayer({
+        id: 'decisions-hit', type: 'line', source: 'decisions',
+        paint: { 'line-color': '#000', 'line-opacity': 0, 'line-width': 14 },
+      })
+      m.on('mousemove', 'decisions-hit', (ev) => {
+        m.getCanvas().style.cursor = 'pointer'
+        // Several lanes can sit under one cursor. Answering with whichever
+        // Mapbox listed first meant the chosen lane lost to a refused one at
+        // exactly the moment someone was trying to read it. Rank instead:
+        // chosen > considered > rejected.
+        const RANK = { chosen: 2, considered: 1, rejected: 0 }
+        const f = (ev.features ?? []).slice().sort(
+          (a, b) => (RANK[b.properties.verdict] ?? 0) - (RANK[a.properties.verdict] ?? 0))[0]
+        if (f) setHovered({ ...f.properties, x: ev.point.x, y: ev.point.y })
+      })
+      m.on('mouseleave', 'decisions-hit', () => {
+        m.getCanvas().style.cursor = ''
+        setHovered(null)
+      })
+    }
+
     // markers — plant + suppliers
     markers.current.forEach((x) => x.remove())
     markers.current = []
@@ -187,7 +308,7 @@ export default function MapView({ revision, onFallback }) {
       markers.current.push(new mapboxgl.Marker({ element: el })
         .setLngLat([Number(s.lng), Number(s.lat)]).addTo(m))
     }
-  }, [ready, data])
+  }, [ready, data, routes, showDecisions])
 
   if (failed || !TOKEN) {
     return (
@@ -210,6 +331,75 @@ export default function MapView({ revision, onFallback }) {
         <div className="bg-background/60 text-muted-foreground absolute inset-0 flex items-center
                         justify-center gap-2 text-[12px] backdrop-blur">
           <Loader2 className="size-4 animate-spin" />loading map…
+        </div>
+      )}
+
+      {/* ---- hover: the REASON, not the stats -------------------------------
+          A tooltip full of numbers tells you what a lane is. The question a
+          person actually has in front of a map of refused routes is *why*, and
+          for a rejection this is the same sentence the Decision Explorer
+          prints — one author, one explanation. */}
+      <AnimatePresence>
+        {hovered && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.12 }}
+            style={{ left: Math.min(hovered.x + 14, 9999), top: hovered.y + 14 }}
+            className="glass pointer-events-none absolute z-30 max-w-[19rem] rounded-lg
+                       p-2.5 shadow-xl">
+            <div className="flex items-center gap-1.5">
+              <span className="size-2 rounded-full"
+                    style={{ background: hovered.color }} />
+              <span className="truncate text-[12px] font-medium">{hovered.name}</span>
+              <Badge variant="outline" className="ml-auto shrink-0 font-mono text-[9px]">
+                {hovered.mode}
+              </Badge>
+            </div>
+            <div className="mt-1.5 text-[11.5px] leading-relaxed">{hovered.why}</div>
+            {hovered.constraint && (
+              <div className="text-danger mt-1 font-mono text-[9.5px]">
+                {hovered.constraint}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ---- legend: nothing on the map goes unexplained -------------------- */}
+      {(routes?.lanes?.length ?? 0) > 0 && (
+        <div className="glass absolute right-4 bottom-4 z-20 rounded-lg p-2.5 text-[10px]">
+          <button onClick={() => setShowDecisions((v) => !v)}
+                  className="text-muted-foreground mb-1.5 flex w-full items-center gap-1.5
+                             tracking-[0.12em] uppercase hover:text-foreground">
+            <MapPinned className="size-2.5" />
+            decision lanes {showDecisions ? 'on' : 'off'}
+          </button>
+          {showDecisions && (
+            <>
+              <div className="space-y-0.5">
+                {[['chosen', 'chosen'], ['considered', 'considered'],
+                  ['rejected', 'refused — hover for the rule']].map(([k, label]) => (
+                  <div key={k} className="flex items-center gap-1.5">
+                    <span className="h-0.5 w-4 rounded"
+                          style={{ background: VERDICT_TONE[k],
+                                   opacity: k === 'rejected' ? 0.5 : 1 }} />
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="ml-auto font-mono tabular-nums">
+                      {routes?.verdicts?.[k] ?? 0}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="text-muted-foreground/70 mt-1.5 border-t pt-1.5">
+                shape = mode · air ---- · sea —— · rail -- · road ··
+              </div>
+              {routes?.lanes_without_coordinates?.length > 0 && (
+                <div className="text-warn mt-1">
+                  {routes.lanes_without_coordinates.length} lane(s) hidden — no coordinates
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

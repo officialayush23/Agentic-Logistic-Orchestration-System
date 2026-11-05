@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChevronDown, ScrollText, Search, X } from 'lucide-react'
 import { api } from '@/lib/api'
+import { ACTOR_LABEL, actorSide, toolFor } from '@/lib/tools'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,6 +28,7 @@ const ALL = '__all__'
 
 export default function AuditPage() {
   const [runId, setRunId] = useState(ALL)
+  const [side, setSide] = useState('all')
   const [actor, setActor] = useState(ALL)
   const [type, setType] = useState(ALL)
   const [q, setQ] = useState('')
@@ -49,6 +51,7 @@ export default function AuditPage() {
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return events.filter((e) =>
+      (side === 'all' || actorSide(e.actor) === side) &&
       (actor === ALL || e.actor === actor) &&
       (type === ALL || e.event_type === type) &&
       (!needle ||
@@ -56,10 +59,13 @@ export default function AuditPage() {
         (e.agent_reason ?? '').toLowerCase().includes(needle) ||
         (e.incident_id ?? '').toLowerCase().includes(needle) ||
         (e.event_type ?? '').toLowerCase().includes(needle)))
-  }, [events, actor, type, q])
+  }, [events, side, actor, type, q])
 
-  const clear = () => { setActor(ALL); setType(ALL); setQ(''); setRunId(ALL) }
+  const clear = () => {
+    setActor(ALL); setType(ALL); setQ(''); setRunId(ALL); setSide('all')
+  }
   const filtering = actor !== ALL || type !== ALL || q.trim() || runId !== ALL
+    || side !== 'all'
 
   return (
     <div className="flex h-full flex-col">
@@ -114,6 +120,22 @@ export default function AuditPage() {
                  placeholder="Search…" className="h-8 w-[13rem] pl-8 text-[12px]" />
         </div>
 
+        {/* "Show me only what the human did" is the question people actually
+            ask of an audit trail, and it should be one click rather than a scan
+            down the actor column deciding whether `operator` and `human` mean
+            the same thing. They do. */}
+        <div className="flex items-center gap-1">
+          {[['all', 'everyone'], ['agent', 'agent only'], ['human', 'people only']].map(
+            ([k, label]) => (
+              <button key={k} onClick={() => setSide(k)}
+                      className={`rounded px-2 py-1 text-[11px] transition-colors
+                        ${side === k ? 'bg-muted text-foreground'
+                                     : 'text-muted-foreground hover:text-foreground'}`}>
+                {label}
+              </button>
+            ))}
+        </div>
+
         {filtering && (
           <Button variant="ghost" size="sm" onClick={clear}
                   className="text-muted-foreground h-8 gap-1 px-2 text-[11.5px]">
@@ -150,16 +172,40 @@ export default function AuditPage() {
                                    text-left transition-colors">
                   <span className="text-muted-foreground w-16 shrink-0 pt-0.5 font-mono
                                    text-[11px] tabular-nums">{t}</span>
-                  <Badge variant="outline"
-                         className="mt-px shrink-0 font-mono text-[9.5px]">
-                    {e.event_type}
-                  </Badge>
+                  {/* The tool first, then what it did. Naming the function that
+                      ran is what turns this from an application log into an
+                      agent's trace — it answers "what can this thing do?" from
+                      the record rather than from a slide. A solid badge means
+                      the step recorded its own name; an outlined one means we
+                      inferred it from the event type, and the tooltip says
+                      which. */}
+                  {(() => {
+                    const t = toolFor(e)
+                    return t ? (
+                      <code className={`mt-px shrink-0 rounded px-1 py-0.5 font-mono
+                        text-[9.5px] ${t.exact ? 'bg-primary/10 text-primary'
+                                               : 'bg-muted text-muted-foreground'}`}
+                            title={t.exact
+                              ? `${t.module} — the step recorded this itself`
+                              : `${t.module} — inferred from ${e.event_type}`}>
+                        {t.tool}
+                      </code>
+                    ) : (
+                      <Badge variant="outline"
+                             className="mt-px shrink-0 font-mono text-[9.5px]">
+                        {e.event_type}
+                      </Badge>
+                    )
+                  })()}
                   <span className="min-w-0 flex-1 text-[13px] leading-relaxed">
                     {e.human_summary}
                   </span>
                   <Badge variant="outline"
-                         className="text-muted-foreground mt-px shrink-0 text-[9.5px]">
-                    {e.actor}
+                         className={`mt-px shrink-0 text-[9.5px] ${
+                           actorSide(e.actor) === 'human'
+                             ? 'border-info/45 bg-info/10 text-info'
+                             : 'text-muted-foreground'}`}>
+                    {ACTOR_LABEL[e.actor] ?? e.actor}
                   </Badge>
                   {e.scenario_run_id != null && (
                     <span className="text-muted-foreground shrink-0 pt-0.5 font-mono

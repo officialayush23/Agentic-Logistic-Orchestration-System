@@ -485,3 +485,241 @@ The Decision Explorer is a comparison. The person who signs asks a different fiv
       and open questions — all of which held no foreign key into the seeded world and were
       quietly surviving it. A "clean" world with four stale conversations in it is worse
       than not resetting at all.
+
+---
+
+## T16 — Route network map: multi-modal, accepted **and** rejected  ⭐ COMPETITIVE GAP
+
+Added after scanning Team Scalar's *Reroute* (team-scalar.vercel.app). Their strongest asset
+is a world map with mode-labelled route options and a comparison table; ours is the reasoning
+underneath. This task closes the visual gap without adopting their weakness — their
+"Leg-by-Leg Intermodal Breakdown" renders **0 Segments**, i.e. the table that would prove the
+route is empty. Ours must never be able to render empty.
+
+The substrate already exists and is not being shown:
+
+- `transport_mode` enum is `AIR | SEA | RAIL | ROAD` (0001_init.sql:16)
+- `supplier_lanes(supplier_id, warehouse_id, mode, transit_days, freight_cost)` — a supplier
+  can have several lanes, and the solver already evaluates every one
+- `suppliers.lat/lng` and `warehouses.lat/lng` exist (0004_geo_coords_for_network_view.sql)
+- `solver._hard_filter` already produces a `Rejection(supplier_id, supplier_name, constraint,
+  human_reason, detail)` for every refusal, including `HAZMAT_NO_AIR` with the mode in `detail`
+- `MapView.jsx` already draws arcs on Mapbox; `NetworkFlow.jsx` is the schematic fallback
+
+What is missing is that the map shows *shipment state*, never *decision state*. The agent
+considers a dozen lanes and refuses most of them; the operator sees none of that geography.
+
+### T16.1 — Lane-level verdicts out of the solver
+
+`_hard_filter` dedupes rejections by `(supplier, constraint)` and then **drops any rejection
+for a supplier that is viable on another lane** (solver.py:145). That is correct for the
+Decision Explorer — one clean reason per supplier — and wrong for a map, where a Shenzhen
+supplier reachable by SEA but refused by AIR is exactly the picture worth drawing.
+
+- [ ] Keep `rejections` (deduped, per supplier) exactly as it is — the Explorer, evaluation
+      and `intelligence.py` all read it and must not change
+- [ ] Add `lane_rejections`: the pre-dedupe list, one row per (supplier, mode), each carrying
+      `mode`, `constraint`, `human_reason`, `detail`
+- [ ] Add `lane_candidates`: every lane that survived the filter, with `mode`,
+      `lead_time_hours`, `freight_cost`, `unit_price`, and whether it is in the chosen plan
+- [ ] Verdict per lane is one of: `chosen` · `considered` · `rejected`
+
+### T16.2 — `GET /api/routes` (scoped to the active run)
+
+- [ ] One payload the map can draw without a second call: `plant{lat,lng}`, and
+      `lanes[]` of `{supplier_id, supplier_name, from{lat,lng}, to{lat,lng}, mode, verdict,
+      constraint, human_reason, hours, freight_cost, landed_cost, legs[]}`
+- [ ] `legs[]` is the intermodal breakdown: `{seq, mode, from, to, depart_sim, arrive_sim,
+      hours}`. **A lane with zero legs is a bug, not an empty state** — synthesise the single
+      direct leg from the lane itself rather than shipping an empty table
+- [ ] Empty state is `null` run, not zeros (same rule as `_active_run_id`)
+
+### T16.3 — Map: mode + verdict, expandable
+
+- [ ] Mode is line *shape*, verdict is line *colour* — the two never share a channel:
+      AIR long-dash great-circle · SEA solid bend · RAIL short-dash · ROAD dotted straight
+- [ ] Verdict colour: chosen = lime, considered = muted blue, rejected = red at 40% opacity
+- [ ] Rejected lanes are drawn **by default**. The refusals are the differentiator; hiding
+      them to keep the map tidy throws away the whole argument
+- [ ] Click a lane → side panel with the constraint, the human reason, and the numbers that
+      produced it. Hover → **the reason, not the stats**: chosen reads "on time by 14h,
+      Rs 2.1L landed, reliability 0.91"; rejected reads the rule that killed it, in the
+      *same sentence* the Decision Explorer uses. A judge who reads the map and then the
+      explorer must not find two different explanations of one refusal
+- [ ] Filter chips: mode (4) × verdict (3), plus "chosen only" for the screenshot
+- [ ] Expand to fullscreen (`Esc` closes, state preserved), and it must survive token-less
+      Mapbox by falling back to `NetworkFlow` with the same colours and filters
+- [ ] Legend that names the four modes and the three verdicts. Nothing on the map unexplained
+
+### T16.4 — Route comparison table (under the map)
+
+- [ ] Columns: option · path with mode per leg · transit hours · landed cost · Δ vs baseline ·
+      constraint verdict · action. Baseline row = do-nothing, and it is always present
+- [ ] Δ vs baseline in **both** hours and rupees, signed, and a cost *increase* is never
+      printed in the savings column
+- [ ] Row expands into the leg breakdown from T16.2. Never renders "0 segments"
+
+### T16.5 — Test cases  ⭐ this is the half that makes the map trustworthy
+
+No pytest harness exists yet. `solver.py` is pure functions over dicts — no DB needed — so the
+first tests are cheap and cover the part judges will interrogate.
+
+- [ ] `backend/tests/` + pytest in requirements, `pytest -q` green in one command
+- [ ] `test_lane_verdicts.py`
+      - hazmat component: the AIR lane is rejected `HAZMAT_NO_AIR`, the SEA lane of the *same
+        supplier* is still `considered` (this is the case the current dedupe hides)
+      - a supplier missing `AEC-Q100` is rejected on **every** lane, not one
+      - MOQ and OVER_BUDGET each produce a rejection carrying the numbers in `detail`
+      - every lane in the output has a `mode` from the enum and a non-empty `human_reason`
+        when rejected
+- [ ] `test_routes_endpoint.py` (async, against a seeded test DB or a stubbed conn)
+      - every lane has both endpoints with real coordinates — a lane missing `lat/lng` must
+        fail the test, not silently vanish from the map
+      - `legs[]` is non-empty for every lane returned
+      - with no active run the endpoint returns `null`, not an empty world that reads as zero
+- [ ] `test_scenario_multimodal.py` — a new scenario `S-MODE`: sea lane blocked, rail slower
+      but compliant, air cheapest on time but hazmat-prohibited. Assert the agent picks rail,
+      that air appears on the map as rejected with the hazmat reason, and that the approval
+      gate fires if the rail option crosses the threshold
+- [ ] Frontend: one Playwright pass — inject `S-MODE`, expand the map, assert a red AIR lane
+      is present, click it, assert the reason panel names the constraint
+
+**Done when:** injecting `S-MODE` draws four modes on one map, the refused air lane is visible
+and clickable with the hazmat rule as its reason, the comparison table shows a non-empty leg
+breakdown for every row, and `pytest -q` proves the verdicts rather than the screenshot doing it.
+
+---
+
+## T17 — Two problems at once  ⭐⭐ BIGGEST RISK AND BIGGEST DIFFERENTIATOR
+
+Every scenario we have ever run is one incident, one component, one trap. The system has
+never been asked to make two decisions at the same time. It can — and when it does, the
+authority boundary leaks.
+
+Neither competitor models contention at all. A control tower that can say *"this order lost
+the last 400 units to that order, and here is why that was right"* is a thing no screenshot
+of theirs can answer.
+
+### T17.0 — BUG: the emergency budget is not a ceiling under concurrency
+
+`agent.py:38` keeps `_RUNNING` as one asyncio task **per incident**, so runs are genuinely
+concurrent. `solver.py:438` computes the budget like this:
+
+```python
+spent = float(await conn.fetchval(
+    "select coalesce(sum(total_value),0) from purchase_orders where created_by_agent") or 0)
+budget_left = EMERGENCY_BUDGET_INR - spent          # solver.py:213
+```
+
+`spent` counts only purchase orders **already placed**. Nothing holds money between scoring
+an option and committing it. Two live incidents each read the same Rs 5,00,000, each approve
+Rs 4,00,000, and both pass `OVER_BUDGET`. The constraint we present on stage as a hard
+authority boundary is not one.
+
+The same hole exists in units: `CANDIDATE_SQL` (solver.py:351) reads `sc.available_quantity`
+raw, so two incidents can allocate the same 800 units from the same supplier. (`NEED_SQL`
+nets *plant* stock against competing claims — supplier availability has no equivalent.)
+
+- [ ] Treat this as a bug with a failing test first, not as a feature request
+
+### T17.1 — Claims: reserve, don't just read
+
+Additive table, per RULE 0.
+
+```
+resource_claims(
+  id, incident_id, scenario_run_id,
+  kind          -- 'budget' | 'units'
+  supplier_id   -- null for budget
+  amount        -- rupees, or units
+  state         -- 'held' | 'placed' | 'released'
+  created_at, released_at, reason)
+```
+
+- [ ] A chosen option **holds** its budget and units the moment it is chosen, not when the PO
+      is placed. Approval pending is still a claim — that is the whole point
+- [ ] `budget_left = EMERGENCY_BUDGET − placed − held`, and `_hard_filter` reads that
+- [ ] Supplier availability in `CANDIDATE_SQL` is netted against `held` claims the same way
+- [ ] A claim is released on reject, on expiry, or on a reschedule that gives the stock back.
+      Every release is an audit event with the reason — a silent release is a leak
+- [ ] The `OVER_BUDGET` rejection gets richer and more honest: "Rs 1,20,000 of the remaining
+      budget is held by INC-002 for a critical line."
+
+### T17.2 — Triage: which problem gets the money
+
+When two incidents want the last 400 units, something must choose. **It is not the LLM.**
+A deterministic, stated, arguable rule, in code, in one function:
+
+1. hours to line stop, ascending — the line that stops first wins
+2. then production-order priority (critical · high · medium · low)
+3. then units at risk
+4. then order value
+
+- [ ] `triage.py` — `rank(incidents) -> ordered list`, pure function, unit-tested
+- [ ] The agent processes in rank order and claims in rank order
+- [ ] **The loser's rejection names the winner**: "lost this stock to INC-002, which stops a
+      critical line 9h sooner." A refusal that does not say who won is not an explanation
+- [ ] The rule is printed in the UI next to the queue. A ranking nobody can read is a black box
+- [ ] Human attention is the third scarce resource: the approval queue is sorted by the same
+      rank, and says why this one is at the top
+
+### T17.3 — Practices, distinct from policies
+
+**Policies** are hard and already exist: hazmat never flies, AEC-Q100 or nothing, MOQ, budget
+ceiling, the Rs 1,50,000 gate. `_hard_filter` deletes violators and there is no argument.
+
+**Practices** are defeasible — what a good planner does, which is not the same as what the
+rules forbid. Do not spend the last of the emergency budget on a medium-priority order while a
+critical one is open. Prefer single-source over a split when the split saves under ~5%. Do not
+buy air freight for a shortfall a reschedule covers. Keep the second source warm.
+
+The trap is putting these in a prompt. Then the model "knows" them, nothing is checkable, and
+we have argued ourselves into exactly the position we criticise. So: **practices are data.**
+
+```
+practices(id, name, condition, effect, weight, source, active)
+practice_applications(decision_id, practice_id, outcome, reason)
+   -- outcome: 'followed' | 'overridden'
+```
+
+- [ ] Practices adjust **score**, never eligibility. A practice that can delete a candidate is
+      a policy wearing a costume, and belongs in `_hard_filter` with the others
+- [ ] Every practice that fired is recorded as followed or overridden, with the reason
+- [ ] The explanation reads: "took the split even though P-04 prefers single-source, because
+      the single-source option lands 26h late"
+- [ ] Each practice names its **source** — the ops convention it encodes. An unsourced practice
+      is an opinion with a table behind it
+- [ ] A practice that is never overridden in any scenario is either a policy or decoration
+
+### T17.4 — Incident scope: switching the problem switches the world
+
+Today everything hangs off `_active_run_id` — one run, one world. Multiple simultaneous
+problems need a second axis: scope to an **incident** inside the run.
+
+- [ ] Incident scope threaded through the API, not a filter bolted onto each screen
+- [ ] One selector at the top of the map. Changing it re-points KPIs, map, recovery, approvals,
+      audit and intelligence together
+- [ ] "All problems" is a valid scope and shows the triage queue, not zeros
+- [ ] The selector shows each incident's rank and severity, so choosing is informed
+
+### T17.5 — Test matrix: from one trap to contention
+
+- [ ] `test_budget_ceiling.py` — two incidents, one budget. Total committed + held **never**
+      exceeds `EMERGENCY_BUDGET_INR`. This test fails today; that is the point
+- [ ] `test_shared_stock.py` — two incidents, one supplier's last units. Allocated ≤ available,
+      and the loser's rejection names the winner
+- [ ] `test_triage_order.py` — three incidents opened by one port-closure cascade. Processing
+      order matches `rank()`, and the printed rule matches the order actually used
+- [ ] `test_external_signals.py` — weather, port closure and carrier events all reach the risk
+      detector and can raise severity. Severity must have more than one possible origin
+- [ ] `test_practice_conflict.py` — two practices point opposite ways. One is chosen, the
+      override is recorded with a reason, and the explanation names both
+- [ ] `test_release.py` — reject an approval, assert the claim is released and the budget
+      returns. A held claim that survives its decision is the leak in a different costume
+- [ ] Scenario `S-CONTEND`: port closure opens three incidents across three orders, one
+      supplier can serve two of them, the budget covers one and a half
+
+**Done when:** injecting `S-CONTEND` opens three incidents, the queue shows the rank and the
+rule that produced it, the agent works them in that order, the third is refused with a reason
+that names which incident took the money, and the total spend cannot exceed the ceiling no
+matter how the runs interleave.

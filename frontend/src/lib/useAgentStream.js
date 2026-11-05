@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { api, WS_URL } from './api'
-import { clearPersisted } from './persist'
+import { api, wsUrl } from './api'
 
 /**
  * Live audit stream.
@@ -35,25 +34,8 @@ export function useAgentStream() {
   // Anything derived from the world, refreshed on every event. This is a
   // denylist rather than a list of keys to remember: the previous version was
   // an allowlist, and every query key added afterwards silently went stale.
-  // Coalesced on purpose. A scenario emits a burst — twenty events inside two
-  // seconds — and an unthrottled sweep turns each one into a full refetch of
-  // every query on screen. That is where the wall of identical GETs in the
-  // server log came from, and it made the app slower exactly when it had the
-  // most to show. One sweep per burst is the same correctness at a fraction of
-  // the traffic.
-  const pending = useRef(null)
   const refresh = useCallback(() => {
-    if (pending.current !== null) return
-    pending.current = setTimeout(() => {
-      pending.current = null
-      qc.invalidateQueries({
-        predicate: (q) => q.queryKey?.[0] !== 'llm',
-        // 'active' (the default) leaves a query that is mounted-but-not-rendered
-        // — a page behind a tab, a panel inside a closed drawer — holding stale
-        // data, which is then shown the instant you navigate to it.
-        refetchType: 'all',
-      })
-    }, 450)
+    qc.invalidateQueries({ predicate: (q) => q.queryKey?.[0] !== 'llm' })
   }, [qc])
 
   const merge = useCallback((incoming) => {
@@ -78,7 +60,9 @@ export function useAgentStream() {
     const connect = () => {
       if (closed) return
       setStatus('connecting')
-      const ws = new WebSocket(WS_URL)
+      // Token in the query string: a browser cannot set headers on a
+      // websocket handshake, and the server resolves it the same way.
+      const ws = new WebSocket(wsUrl())
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -106,9 +90,6 @@ export function useAgentStream() {
           setEvents([])
           setClock(msg.clock)
           qc.clear()
-          // A wiped backend behind a warm on-disk cache shows ghosts on the
-          // next reload, which is the exact thing a hard reset is for.
-          clearPersisted()
         }
 
         setRevision((r) => r + 1)
@@ -131,7 +112,18 @@ export function useAgentStream() {
       closed = true
       clearInterval(ping)
       clearTimeout(retryRef.current)
-      wsRef.current?.close()
+      // Calling close() on a socket still in CONNECTING aborts the handshake
+      // and logs "closed before the connection is established". React's
+      // StrictMode mounts, unmounts and remounts every effect in development,
+      // so this fires on every page load and looks like a backend fault when
+      // it is not one. Let a pending handshake finish and close itself.
+      const ws = wsRef.current
+      if (!ws) return
+      if (ws.readyState === WebSocket.CONNECTING) {
+        ws.addEventListener('open', () => ws.close(), { once: true })
+      } else if (ws.readyState === WebSocket.OPEN) {
+        ws.close()
+      }
     }
   }, [merge, refresh, qc])
 

@@ -12,7 +12,8 @@ import os
 import pathlib
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (Depends, FastAPI, Header, HTTPException, WebSocket,
+                     WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -24,8 +25,10 @@ from .scenarios import (EVENT_SCHEMA, EVENT_TYPES, REF_TABLES, SCENARIOS,
                         unregister_custom, validate_custom)
 from .solver import solve_for_production_order
 from .scorer import score_run
-from . import (agent, command, comms, evaluation, intelligence, learning, llm,
-               supplier_portal, worldbuild)
+from . import (agent, auth, claims, command, comms, evaluation, intelligence,
+               learning, llm, llm_settings, supplier_portal, triage, worldbuild)
+from .core import as_system as core_as_system, current_org, set_org
+from urllib.parse import parse_qs
 from .risk import assess as assess_risk
 
 SEED_PATH = pathlib.Path(__file__).resolve().parents[2] / "supabase" / "seed.sql"
@@ -249,12 +252,193 @@ async def scenario_detail(scenario_id: str):
     return SCENARIOS[scenario_id]
 
 
-@app.post("/api/scenarios/{scenario_id}/inject")
-async def inject(scenario_id: str):
+# ------------------------------------------------------- the tenancy gate ---
+#
+# Every route is closed unless it is on this list. That direction matters: a
+# route added next month is protected by default, and the way to expose it is a
+# deliberate edit to a short list rather than remembering to add a dependency to
+# a long one. The failure mode of the opposite arrangement is a new endpoint
+# quietly serving every tenant's data.
+#
+# This is written as raw ASGI rather than `@app.middleware("http")` on purpose.
+# Starlette's BaseHTTPMiddleware runs the downstream app in a separate anyio
+# task, and a ContextVar set in the middleware does not reliably reach the
+# handler through it. Since the entire tenancy scheme rests on that ContextVar
+# arriving intact, the middleware runs in the same task as the handler.
+
+PUBLIC_PATHS = frozenset({
+    "/", "/health", "/api/health",
+    "/api/auth/signup", "/api/auth/login",
+    "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect",
+})
+
+
+class TenancyMiddleware:
+    """Resolve the bearer token and put the organisation into context."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if path in PUBLIC_PATHS or scope.get("method") == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+
+        headers = {k.decode().lower(): v.decode()
+                   for k, v in scope.get("headers") or []}
+        raw = ""
+        authz = headers.get("authorization", "")
+        if authz.lower().startswith("bearer "):
+            raw = authz[7:].strip()
+        raw = raw or headers.get("x-portal-token", "").strip()
+
+        # The websocket carries no headers a browser can set, so the token
+        # arrives as a query parameter there. Same token, same resolution — the
+        # transport changes, the identity does not.
+        if not raw and scope["type"] == "websocket":
+            qs = parse_qs((scope.get("query_string") or b"").decode())
+            raw = (qs.get("token") or [""])[0].strip()
+
+        who = await auth.resolve(raw) if raw else None
+        if who is None:
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 4401})
+                return
+            await _unauthorized(send)
+            return
+
+        set_org(who["org_id"])
+        scope["principal"] = who
+        await self.app(scope, receive, send)
+
+
+async def _unauthorized(send) -> None:
+    body = json.dumps({"detail": "Missing or invalid bearer token."}).encode()
+    await send({"type": "http.response.start", "status": 401,
+                "headers": [(b"content-type", b"application/json"),
+                            (b"content-length", str(len(body)).encode())]})
+    await send({"type": "http.response.body", "body": body})
+
+
+app.add_middleware(TenancyMiddleware)
+
+
+# ------------------------------------------------------------------- auth ---
+#
+# These four routes are the only ones that may run without an organisation in
+# context, because they are the ones that establish it.
+
+
+class SignupBody(BaseModel):
+    org_id: str
+    name: str
+    email: str
+    password: str
+    full_name: str | None = None
+    industry: str | None = None
+    city: str | None = None
+    country: str | None = None
+
+
+class LoginBody(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/api/auth/signup")
+async def auth_signup(body: SignupBody):
     try:
-        return await injector.inject(scenario_id)
+        return await auth.create_org(
+            org_id=body.org_id.strip().upper(), name=body.name,
+            email=body.email, password=body.password, full_name=body.full_name,
+            industry=body.industry, city=body.city, country=body.country)
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/api/auth/login")
+async def auth_login(body: LoginBody):
+    out = await auth.login(body.email, body.password)
+    if out is None:
+        # One message for every cause. Which half of the credential was wrong is
+        # not information we owe the person asking.
+        raise HTTPException(401, "Email or password is incorrect.")
+    return out
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(authorization: str | None = Header(default=None)):
+    raw = (authorization or "").partition(" ")[2].strip()
+    if not raw:
+        raise HTTPException(400, "No token supplied.")
+    async with core_as_system():
+        async with db_conn() as conn:
+            await auth.revoke_token(conn, raw)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+async def auth_me(who: dict = Depends(auth.principal)):
+    """Who the caller is, and what they may do. The UI hangs its gating off this."""
+    async with db_conn() as conn:
+        org = await conn.fetchrow(
+            "select id, name, plan, industry, city, country from organizations "
+            "where id = $1", who["org_id"])
+    return {**who, "organization": dict(org) if org else None}
+
+
+async def _world_is_spent(conn) -> int:
+    """How many recovery orders a previous run left standing in this world.
+
+    A scenario only means something against the world it was written for. Once a
+    run has recovered a shortage, the stock it bought is still inbound — so the
+    *same* scenario replayed against that world finds nothing short, the risk
+    detector correctly reports "no production order is short", no incident
+    opens, nothing is planned, and the evaluation reports six failures for a run
+    in which the agent did nothing wrong.
+
+    That is exactly what happened here: one good run, then six consecutive runs
+    of the same scenario scoring 3/15 because the first run had already fixed
+    the problem. A judge pressing Run twice sees a product that works once.
+    """
+    return await conn.fetchval(
+        """select count(*) from purchase_orders
+            where created_by_agent and status in ('open','in_transit')""") or 0
+
+
+@app.post("/api/scenarios/{scenario_id}/inject")
+async def inject(scenario_id: str, fresh: bool = True):
+    """Start a scenario.
+
+    `fresh=true` (the default) re-seeds the world first when a previous run has
+    left recovery stock in it. Pass `fresh=false` to deliberately layer one
+    scenario on top of another's aftermath — a legitimate thing to want, but it
+    has to be asked for, because the silent version of it is indistinguishable
+    from the agent failing.
+    """
+    reseeded = 0
+    if fresh:
+        async with db_conn() as conn:
+            reseeded = await _world_is_spent(conn)
+        if reseeded:
+            # Re-seed operational state only. Run history and the audit log are
+            # preserved, so the comparison against earlier runs survives.
+            await reset(mode="demo")
+    try:
+        out = await injector.inject(scenario_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if reseeded:
+        out["world_reseeded"] = True
+        out["note"] = (f"{reseeded} recovery order(s) from a previous run were still "
+                       f"inbound, which would have left this scenario with nothing to "
+                       f"detect. The world was re-seeded first; run history was kept.")
+    return out
 
 
 class CustomScenario(BaseModel):
@@ -346,6 +530,26 @@ async def reset(mode: str = "demo"):
     """
     if mode not in ("demo", "hard"):
         raise HTTPException(400, "mode must be 'demo' or 'hard'")
+    # Re-seeding is a demo capability, not a dev leftover — showing this product
+    # means running a scenario, showing the recovery, and putting the world back
+    # so the next person sees the same thing. What it must never be is available
+    # to a tenant running on live data, where "re-seed the world" means deleting
+    # a customer's supply chain.
+    #
+    # So it is gated on the organisation's plan rather than removed. `demo` and
+    # `trial` tenants can reset; a paying tenant cannot, and the refusal says why
+    # instead of 404-ing.
+    org_plan = None
+    async with db_conn() as conn:
+        org_plan = await conn.fetchval(
+            "select plan from organizations where id = $1", current_org())
+    if org_plan not in ("demo", "trial"):
+        raise HTTPException(
+            403,
+            f"This organisation is on the '{org_plan}' plan, which runs against "
+            f"real data. Re-seeding is available to demo and trial tenants only — "
+            f"it deletes and rebuilds the operational world, which is not "
+            f"something a live supply chain should be one button away from.")
     await injector.stop_all()
     if not SEED_PATH.exists():
         raise HTTPException(500, f"seed file not found at {SEED_PATH}")
@@ -366,16 +570,20 @@ async def reset(mode: str = "demo"):
         # conversations and two unanswered questions from the previous run is
         # worse than not resetting at all, because you only find out when the
         # agent replies to a thread that no longer means anything.
-        await conn.execute(
-            "truncate message_threads, thread_messages restart identity cascade")
-        await conn.execute("truncate recovery_plans restart identity cascade")
-        await conn.execute("truncate agent_constraints restart identity cascade")
-        await conn.execute("truncate human_input_requests restart identity cascade")
-        await conn.execute("truncate warehouse_tasks restart identity cascade")
+        # DELETE, not TRUNCATE. TRUNCATE ignores row-level security entirely —
+        # it is a table-level operation, so a policy filtering by org_id has no
+        # say in it. One demo tenant pressing Reset would have emptied these
+        # tables for every customer on the deployment. A DELETE goes through the
+        # policy, so it can only ever reach this tenant's rows.
+        for table in ("thread_messages", "message_threads", "recovery_plans",
+                      "agent_constraints", "human_input_requests",
+                      "warehouse_tasks", "resource_claims"):
+            await conn.execute(f"delete from {table}")
 
         if mode == "hard":
-            await conn.execute(
-                "truncate run_scores, scenario_runs, audit_events restart identity cascade")
+            for table in ("run_scores", "evaluation_results", "scenario_runs",
+                          "audit_events"):
+                await conn.execute(f"delete from {table}")
 
     # In-process state has to go with it, or the agent keeps a checkpoint for an
     # incident that no longer exists and refuses to reopen the same component.
@@ -968,6 +1176,194 @@ async def agent_resume(incident_id: str, body: ResumeBody):
 async def agent_verify(incident_id: str):
     async with db_conn() as conn:
         return await agent.verify(conn, incident_id)
+
+
+class LlmKeyBody(BaseModel):
+    provider: str
+    api_key: str
+    model: str | None = None
+    base_url: str | None = None
+
+
+@app.get("/api/settings/llm")
+async def llm_settings_get(who: dict = Depends(auth.member)):
+    """What is configured. Never the key — there is no endpoint that returns it."""
+    async with db_conn() as conn:
+        return await llm_settings.describe(conn)
+
+
+@app.put("/api/settings/llm")
+async def llm_settings_put(body: LlmKeyBody,
+                           who: dict = Depends(auth.requires("owner"))):
+    """Owner only. A model key is a billable credential and changing the model
+    changes what the agent is, so this is not an operator-level action."""
+    try:
+        async with db_conn() as conn:
+            return await llm_settings.save(
+                conn, provider=body.provider, api_key=body.api_key,
+                model=body.model, base_url=body.base_url,
+                user_id=who.get("user_id"))
+    except llm_settings.Rejected as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:                              # noqa: BLE001
+        # Never echo the exception body — it can contain the key that was being
+        # encrypted when something went wrong.
+        raise HTTPException(500, f"Could not store the credential: {type(e).__name__}")
+
+
+@app.delete("/api/settings/llm")
+async def llm_settings_delete(who: dict = Depends(auth.requires("owner"))):
+    async with db_conn() as conn:
+        return await llm_settings.clear(conn, user_id=who.get("user_id"))
+
+
+@app.post("/api/settings/llm/test")
+async def llm_settings_test(who: dict = Depends(auth.requires("owner", "approver"))):
+    """Prove it works. "Saved" and "works" are different claims."""
+    async with db_conn() as conn:
+        return await llm_settings.verify(conn)
+
+
+@app.get("/api/triage")
+async def triage_queue():
+    """Which problem the agent works next, and the rule that decided it.
+
+    A ranking nobody can read is a black box, so the rule ships with the queue
+    rather than living in a docstring. Every row carries its position *and* the
+    comparison that put it there, said against the row above it — "9h more
+    headroom than INC-002" is checkable in a way that "rank 3" is not.
+    """
+    async with db_conn() as conn:
+        run_id = await _active_run_id(conn)
+        rows = await conn.fetch(triage.QUEUE_SQL, run_id)
+    queue = triage.rank([dict(r) for r in rows])
+    return {
+        "has_run": run_id is not None,
+        "active_run_id": run_id,
+        "queue": queue,
+        "rule": triage.RULE,
+        "why": triage.RULE_WHY,
+        "note": ("Deterministic and stated. The language model has no say in this "
+                 "order — a model asked to prioritise produces an answer nobody "
+                 "can locate afterwards, and the output here is which customer's "
+                 "line stops."),
+    }
+
+
+@app.get("/api/routes")
+async def routes(production_order_id: str | None = None):
+    """Every lane the solver looked at, with its verdict and its geography.
+
+    The map has always drawn shipments. Shipments are the least interesting
+    thing here: they are what survived. What the agent actually did was consider
+    a dozen lanes and refuse most of them, and that refusal has coordinates —
+    a Shenzhen supplier reachable by sea but prohibited by air is two lines of
+    opposite colour between the same two points.
+
+    The human_reason on a rejected lane is the *same string* the Decision
+    Explorer prints. That is not tidiness: a judge who reads the map and then
+    the explorer must not find two explanations of one refusal, and the way to
+    guarantee that is to have one sentence with one author — `_hard_filter`.
+
+    A lane with no coordinates is omitted and counted, never silently dropped:
+    a map that quietly loses a supplier is worse than one that says it did.
+    """
+    async with db_conn() as conn:
+        run_id = await _active_run_id(conn)
+        if run_id is None:
+            return {"has_run": False, "active_run_id": None,
+                    "plant": None, "lanes": [], "note": "No active run."}
+
+        target = production_order_id
+        if not target:
+            target = await conn.fetchval(
+                """select po.id from production_orders po
+                     join inventory i on i.component_id = po.required_component
+                                     and i.warehouse_id = po.warehouse_id
+                    where not po.is_on_hold
+                      and po.units_planned * po.component_per_unit
+                          - i.usable_stock + i.safety_stock > 0
+                    order by po.units_planned * po.component_per_unit
+                             - i.usable_stock + i.safety_stock desc
+                    limit 1""")
+        if not target:
+            return {"has_run": True, "active_run_id": run_id, "plant": None,
+                    "lanes": [], "note": "No production order is short."}
+
+        result = await solve_for_production_order(conn, target)
+
+        plant = await conn.fetchrow(
+            """select w.id, w.name, w.city, w.lat, w.lng
+                 from production_orders po join warehouses w on w.id = po.warehouse_id
+                where po.id = $1""", target)
+        geo = {r["id"]: dict(r) for r in await conn.fetch(
+            "select id, coalesce(legal_name, name) as name, city, country, lat, lng "
+            "from suppliers")}
+
+    lanes, missing = [], []
+    for ln in result.get("lanes", []):
+        s = geo.get(ln["supplier_id"])
+        if not s or s["lat"] is None or s["lng"] is None:
+            missing.append(ln["supplier_id"])
+            continue
+        hours = ln.get("lead_time_hours") or 0
+        lanes.append({
+            **ln,
+            "from": {"lat": float(s["lat"]), "lng": float(s["lng"]),
+                     "label": s["name"], "city": s["city"], "country": s["country"]},
+            "to": {"lat": float(plant["lat"]), "lng": float(plant["lng"]),
+                   "label": plant["name"], "city": plant["city"]},
+            # A single direct leg synthesised from the lane itself. A lane with
+            # zero legs is a bug, not an empty state — the competitor screen
+            # that renders "0 Segments" under a route it claims to have planned
+            # is the failure this guards against.
+            "legs": [{
+                "seq": 1, "mode": ln.get("mode"),
+                "from": s["city"], "to": plant["city"],
+                "hours": hours, "days": round(hours / 24, 1),
+            }],
+            "landed_cost": round(
+                float(ln.get("unit_price") or 0)
+                * min(int(result.get("shortfall") or 0),
+                      int(ln.get("available_quantity") or 0))
+                + float(ln.get("freight_cost") or 0), 2),
+        })
+
+    return {
+        "has_run": True, "active_run_id": run_id,
+        "production_order_id": target,
+        "shortfall": result.get("shortfall"),
+        "hours_left": result.get("hours_left"),
+        "plant": dict(plant) if plant else None,
+        "lanes": lanes,
+        "lanes_without_coordinates": missing,
+        "verdicts": {v: len([l for l in lanes if l["verdict"] == v])
+                     for v in ("chosen", "considered", "rejected")},
+        "context": result.get("context"),
+    }
+
+
+@app.get("/api/budget")
+async def budget():
+    """The emergency budget as its three terms, plus who is holding what.
+
+    One number — "Rs 1,80,000 remaining" — cannot be argued with, which is
+    exactly the problem: an operator who sees a refusal has no way to tell a
+    real constraint from a stale reservation. Total, placed, held, and the
+    incidents doing the holding, so the ceiling is checkable rather than
+    asserted.
+    """
+    async with db_conn() as conn:
+        state = await claims.budget_state(conn)
+        units = await claims.held_units(conn)
+    state["held_units"] = [
+        {"supplier_id": sid, **v} for sid, v in sorted(units.items())]
+    state["note"] = (
+        "left = total − placed − held. 'Held' is money an incident has committed "
+        "to but not yet spent, including anything waiting for your approval — "
+        "counting only what is placed is how two concurrent incidents used to "
+        "both fit under one ceiling.")
+    return state
 
 
 @app.get("/api/recovery")

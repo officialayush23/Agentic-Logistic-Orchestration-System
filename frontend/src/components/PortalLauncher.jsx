@@ -82,8 +82,15 @@ export default function PortalLauncher() {
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent align="end" className="w-[26rem] p-0">
-        <div className="px-4 py-3.5">
+      {/* A bounded flex column, not a tall div.
+          `max-h` on the ScrollArea root did nothing: Radix measures its inner
+          viewport, so the list grew past the popover and the footer printed on
+          top of the last few rows. The popover owns the height, the header and
+          footer refuse to shrink, and the middle is the only thing that
+          scrolls. `80vh` so it still fits on a laptop with the list full. */}
+      <PopoverContent align="end"
+                      className="flex max-h-[min(34rem,80vh)] w-[26rem] flex-col p-0">
+        <div className="shrink-0 px-4 py-3.5">
           <div className="text-[13px] font-medium">Answer as someone else</div>
           <p className="text-muted-foreground mt-1 text-[11.5px] leading-relaxed">
             Each of these is a separate screen for a separate person. Open one in
@@ -93,9 +100,9 @@ export default function PortalLauncher() {
           </p>
         </div>
 
-        <Separator />
+        <Separator className="shrink-0" />
 
-        <ScrollArea className="max-h-[26rem]">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="p-2">
             {waiting.length > 0 && (
               <>
@@ -171,9 +178,9 @@ export default function PortalLauncher() {
           </div>
         </ScrollArea>
 
-        <Separator />
+        <Separator className="shrink-0" />
 
-        <div className="text-muted-foreground/70 flex items-start gap-2 px-4 py-3
+        <div className="text-muted-foreground/70 flex shrink-0 items-start gap-2 px-4 py-3
                         text-[10.5px] leading-relaxed">
           <Truck className="mt-0.5 size-3 shrink-0" />
           While a supplier portal is open, the scripted persona for that supplier stands

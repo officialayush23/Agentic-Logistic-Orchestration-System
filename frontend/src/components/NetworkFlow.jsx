@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'motion/react'
 import { AlertTriangle, Factory, History, Package, ShieldCheck, Truck } from 'lucide-react'
@@ -254,8 +254,87 @@ function HoverCard({ hover }) {
   )
 }
 
+/**
+ * Pan and zoom over the schematic.
+ *
+ * The diagram is one SVG with a fixed viewBox, which makes this cheap: zooming
+ * is narrowing the box, panning is sliding it. No library, no re-layout, and
+ * every node keeps its exact position relative to every other — which matters,
+ * because the schematic's whole job is showing relationships and a re-flowing
+ * graph destroys the thing you were looking at.
+ *
+ * Wheel zooms toward the cursor rather than the centre. Zooming to the middle
+ * of the screen when you are reading the top-left corner is the single most
+ * common way a zoom control becomes useless.
+ */
+function useZoomPan(W, H) {
+  const [box, setBox] = useState({ x: 0, y: 0, w: W, h: H })
+  const drag = useRef(null)
+  const svgRef = useRef(null)
+
+  const MIN_W = W / 6          // 6x in
+  const MAX_W = W * 1.6        // a little out, for context
+
+  const reset = useCallback(() => setBox({ x: 0, y: 0, w: W, h: H }), [W, H])
+
+  const zoomAt = useCallback((factor, cx = 0.5, cy = 0.5) => {
+    setBox((b) => {
+      const w = Math.min(MAX_W, Math.max(MIN_W, b.w * factor))
+      const h = w * (H / W)
+      // Keep the point under the cursor fixed: the fraction of the box it sat
+      // at before must be the fraction it sits at after.
+      return { x: b.x + (b.w - w) * cx, y: b.y + (b.h - h) * cy, w, h }
+    })
+  }, [MIN_W, MAX_W, W, H])
+
+  const onWheel = useCallback((e) => {
+    e.preventDefault()
+    const r = svgRef.current?.getBoundingClientRect()
+    if (!r) return
+    zoomAt(e.deltaY > 0 ? 1.12 : 0.89,
+           (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height)
+  }, [zoomAt])
+
+  const onPointerDown = useCallback((e) => {
+    // Left button only, and never on a node — dragging must not steal a click
+    // from something interactive underneath.
+    if (e.button !== 0) return
+    drag.current = { x: e.clientX, y: e.clientY, box }
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+  }, [box])
+
+  const onPointerMove = useCallback((e) => {
+    const d = drag.current
+    if (!d) return
+    const r = svgRef.current?.getBoundingClientRect()
+    if (!r) return
+    setBox({
+      ...d.box,
+      x: d.box.x - (e.clientX - d.x) * (d.box.w / r.width),
+      y: d.box.y - (e.clientY - d.y) * (d.box.h / r.height),
+    })
+  }, [])
+
+  const onPointerUp = useCallback(() => { drag.current = null }, [])
+
+  // The wheel listener has to be non-passive to preventDefault, which React's
+  // onWheel prop cannot express — without this the page scrolls instead.
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [onWheel])
+
+  const zoomPct = Math.round((W / box.w) * 100)
+  return { box, svgRef, reset, zoomAt, zoomPct,
+           onPointerDown, onPointerMove, onPointerUp,
+           dragging: () => drag.current != null }
+}
+
 export default function NetworkFlow({ revision, highlight = [] }) {
   const [hover, setHover] = useState(null)
+  const zp = useZoomPan(W, H)
   const { data } = useQuery({
     queryKey: ['network'], queryFn: api.network})
   const { data: ctx } = useQuery({ queryKey: ['context'], queryFn: api.context })
@@ -319,9 +398,35 @@ export default function NetworkFlow({ revision, highlight = [] }) {
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full"
+      {/* Zoom controls. Present even though the wheel works, because a control
+          you cannot see is a control most people never find. */}
+      <div className="absolute bottom-3 left-3 z-20 flex items-center gap-1 rounded-lg
+                      border p-0.5 backdrop-blur-md
+                      bg-[color-mix(in_oklab,var(--card)_70%,transparent)]">
+        <button onClick={() => zp.zoomAt(0.8)}
+                className="hover:bg-accent rounded px-2 py-0.5 text-[13px] leading-none">+</button>
+        <button onClick={() => zp.zoomAt(1.25)}
+                className="hover:bg-accent rounded px-2 py-0.5 text-[13px] leading-none">−</button>
+        <button onClick={zp.reset}
+                className="hover:bg-accent text-muted-foreground rounded px-1.5 py-0.5
+                           font-mono text-[10px]">
+          {zp.zoomPct}%
+        </button>
+      </div>
+      <div className="text-muted-foreground/50 absolute right-3 bottom-3 z-20
+                      text-[10px]">
+        scroll to zoom · drag to pan
+      </div>
+
+      <svg ref={zp.svgRef}
+           viewBox={`${zp.box.x} ${zp.box.y} ${zp.box.w} ${zp.box.h}`}
+           className="h-full w-full cursor-grab active:cursor-grabbing"
            preserveAspectRatio="xMidYMid meet"
-           onMouseLeave={() => setHover(null)}>
+           onPointerDown={zp.onPointerDown}
+           onPointerMove={zp.onPointerMove}
+           onPointerUp={zp.onPointerUp}
+           onPointerCancel={zp.onPointerUp}
+           onMouseLeave={() => { setHover(null); zp.onPointerUp() }}>
         <defs>
           <radialGradient id="plantGlow">
             <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.35" />
