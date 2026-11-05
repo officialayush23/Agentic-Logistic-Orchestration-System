@@ -1,0 +1,10 @@
+/* Bryntum structural CSS for every product we use, one theme (Svalbard, which
+   follows color-scheme via light-dark()), then our glass overrides in vendors.css. */
+@import '@bryntum/core-enterprise/fontawesome/css/fontawesome.css';
+@import '@bryntum/core-enterprise/fontawesome/css/solid.css';
+@import '@bryntum/core-enterprise/core.thin.css';
+@import '@bryntum/grid-enterprise/grid.thin.css';
+@import '@bryntum/scheduler-enterprise/scheduler.thin.css';
+@import '@bryntum/gantt-enterprise/gantt.thin.css';
+@import '@bryntum/taskboard-enterprise/taskboard.thin.css';
+@import '@bryntum/gantt-enterprise/svalbard.css';

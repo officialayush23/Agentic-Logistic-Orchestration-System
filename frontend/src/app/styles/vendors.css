@@ -1,0 +1,77 @@
+/* Vendor components restyled to Lavender Glass. Kept out of index.css so that file
+   stays verbatim from the design spec. */
+
+/* ---------- globe tooltips (react-globe.gl renders raw HTML) ---------- */
+.globe-tip {
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(22px) saturate(150%);
+  border-radius: 0.75rem;
+  padding: 0.4rem 0.6rem;
+  font: 500 11px/1.4 var(--font-sans);
+  color: var(--foreground);
+}
+.scene-tooltip { color: var(--foreground) !important; }
+
+/* ---------- AG Grid: transparent so the glass card shows through ---------- */
+.ag-glass {
+  --ag-background-color: transparent;
+  --ag-header-background-color: transparent;
+  --ag-odd-row-background-color: transparent;
+}
+.ag-glass .ag-root-wrapper { border: none; background: transparent; }
+.ag-glass .ag-row-hover::before { background: oklch(1 0 0 / 0.5) !important; }
+.dark .ag-glass .ag-row-hover::before { background: oklch(1 0 0 / 0.05) !important; }
+.ag-glass .ag-cell { display: flex; align-items: center; }
+.ag-glass .ag-details-row { padding: 0.75rem 1rem 1rem; background: oklch(1 0 0 / 0.35); }
+.dark .ag-glass .ag-details-row { background: oklch(1 0 0 / 0.03); }
+
+/* ---------- Bryntum: Svalbard theme, re-tinted ---------- */
+.bryntum-glass {
+  --b-primary: var(--violet);
+  --b-font-family: var(--font-sans);
+  --b-font-size: 13px;
+  --b-widget-font-size: 13px;
+  --b-task-board-font-size: 12px;
+  --b-task-board-card-header-font-size: 13px;
+  --b-task-board-column-header-font-size: 12px;
+  --b-task-board-tag-font-size: 10px;
+  --b-widget-background: transparent;
+  --b-panel-background: transparent;
+  --b-grid-background: transparent;
+  --b-grid-header-background: transparent;
+  --b-grid-cell-background: transparent;
+  --b-grid-row-background: transparent;
+  --b-grid-row-hover-background: oklch(1 0 0 / 0.5);
+  --b-grid-cell-border-color: oklch(1 0 0 / 0.6);
+  --b-grid-header-border-color: oklch(1 0 0 / 0.6);
+  --b-schedule-background: transparent;
+  --b-timeaxis-background: transparent;
+  --b-border-color: oklch(1 0 0 / 0.7);
+}
+.dark .bryntum-glass {
+  --b-grid-row-hover-background: oklch(1 0 0 / 0.04);
+  --b-grid-cell-border-color: oklch(1 0 0 / 0.08);
+  --b-grid-header-border-color: oklch(1 0 0 / 0.08);
+  --b-border-color: oklch(1 0 0 / 0.1);
+}
+.bryntum-glass .b-grid-header-text { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-foreground); }
+.bryntum-glass .b-sch-event, .bryntum-glass .b-gantt-task { border-radius: 0.6rem; font-weight: 600; font-size: 11px; }
+.bryntum-glass .b-sch-event.promised { background: repeating-linear-gradient(135deg, oklch(0.56 0.22 278 / 0.10) 0 6px, oklch(0.56 0.22 278 / 0.18) 6px 12px) !important; color: var(--muted-foreground) !important; border: 1px dashed oklch(0.56 0.22 278 / 0.4); }
+
+/* Bryntum TaskBoard columns and cards as glass */
+.bryntum-glass.b-taskboard, .bryntum-glass .b-taskboard-body { background: transparent !important; }
+.bryntum-glass .b-taskboard-column { background: oklch(1 0 0 / 0.35); border-radius: 1.25rem; border: 1px solid oklch(1 0 0 / 0.7); }
+.dark .bryntum-glass .b-taskboard-column { background: oklch(1 0 0 / 0.03); border-color: oklch(1 0 0 / 0.08); }
+.bryntum-glass .b-taskboard-card { border-radius: 1rem; background: oklch(1 0 0 / 0.75); border: 1px solid oklch(1 0 0 / 0.85); box-shadow: 0 8px 24px -14px oklch(0.45 0.15 280 / 0.35); }
+.dark .bryntum-glass .b-taskboard-card { background: oklch(0.3 0.05 280 / 0.7); border-color: oklch(1 0 0 / 0.1); }
+.bryntum-glass .b-taskboard-column-header { font-size: 12px; font-weight: 700; }
+.bryntum-glass .b-taskboard-card-header { white-space: normal; line-height: 1.3; font-weight: 600; }
+
+.bryntum-glass .b-grid-cell { font-size: 13px; }
+.bryntum-glass .b-sch-range.due-line, .bryntum-glass .b-sch-line.due-line { border-inline-start: 2px dashed var(--crit); background: transparent; }
+.bryntum-glass .b-sch-line.due-line label, .bryntum-glass .due-line .b-sch-range-label { background: var(--crit); color: white; border-radius: 6px; font-size: 11px; }
+
+/* ---------- AG Studio: let the glass card be the chrome ---------- */
+.studio-glass .ag-studio-root-inner { background: transparent !important; }
