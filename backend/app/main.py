@@ -42,6 +42,22 @@ app = FastAPI(title="Supply Chain Disruption Control Agent", version="0.1.0")
 _EXTRA_ORIGINS = [o.strip().rstrip("/")
                   for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
+# An unhandled exception becomes a 500 *outside* CORSMiddleware, so the browser
+# reports it as "blocked by CORS policy" and hides the real failure. Catching it
+# here (registered before CORS, so it runs inside it) keeps the CORS headers on
+# the 500 and puts the actual error in the server log.
+@app.middleware("http")
+async def _errors_inside_cors(request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as exc:  # noqa: BLE001 — last-resort handler
+        import logging, traceback
+        logging.getLogger("disruptionops").error(
+            "unhandled %s %s: %s\n%s", request.method, request.url.path, exc, traceback.format_exc())
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "Internal server error", "error": type(exc).__name__}, status_code=500)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_EXTRA_ORIGINS,

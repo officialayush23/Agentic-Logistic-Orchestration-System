@@ -1,0 +1,15 @@
+# Build context is the repo root; only backend/ and supabase/seed.sql are copied.
+**/.env
+**/.env.*
+!**/.env.example
+API KEYS/
+*.csv
+_to_delete/
+.git/
+.claude/
+frontend/
+backend/dash/
+**/__pycache__/
+**/*.pyc
+backend/tests/
+*.pdf

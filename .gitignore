@@ -51,3 +51,7 @@ Thumbs.db
 # ---- Supabase ----
 .supabase/
 supabase/.temp/
+
+# ---- Local virtualenvs committed by mistake ----
+backend/dash/
+_to_delete/
