@@ -1,6 +1,6 @@
 # DisruptionOps API — built from the REPO ROOT so the image can include
 # supabase/seed.sql (main.py resolves it as <root>/supabase/seed.sql).
-#   docker build -f backend/Dockerfile -t disruptionops-api .
+#   docker build -t disruptionops-api .
 #   docker run --env-file backend/.env -p 8000:8000 disruptionops-api
 FROM python:3.12-slim
 

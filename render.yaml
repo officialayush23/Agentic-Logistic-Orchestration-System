@@ -1,7 +1,7 @@
 # Render blueprint for the DisruptionOps API (Docker).
 #
 # New service: Render dashboard → New → Blueprint → pick this repo. Render reads
-# this file, builds backend/Dockerfile from the repo root, and asks for every
+# this file, builds the root Dockerfile, and asks for every
 # `sync: false` value (secrets are never stored in git).
 
 services:
@@ -10,7 +10,7 @@ services:
     runtime: docker
     region: singapore            # closest to the Supabase ap-northeast-2 / India users
     plan: free
-    dockerfilePath: ./backend/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
     autoDeploy: true
