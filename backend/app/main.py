@@ -3086,7 +3086,7 @@ async def integrations_health():
     except Exception as e:  # noqa: BLE001
         put("paypal", False, f"token failed: {str(e)[:120]}")
     async with db_conn() as conn:
-        m = await conn.fetchrow("select vault_id, status, payer_email from finance_mandates order by id desc limit 1")
+        m = await conn.fetchrow("select vault_id, status, payer_email from finance_mandates order by approved_at desc limit 1")
         put("vault", bool(m and m["status"] == "active"),
             f"mandate {m['vault_id']} ({m['status']}) for {m['payer_email']}" if m else "no mandate yet: connect PayPal on Payments")
         counts = await conn.fetchrow(
