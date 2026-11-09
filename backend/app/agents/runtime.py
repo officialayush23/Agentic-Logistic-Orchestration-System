@@ -165,3 +165,25 @@ async def history(thread_id: str, limit: int = 50) -> list[dict]:
 async def mermaid() -> str:
     g = await graph()
     return g.get_graph().draw_mermaid()
+
+
+async def list_threads(limit: int = 30) -> list[dict]:
+    """Threads the team has worked, newest first (from the checkpoint store)."""
+    await graph()
+    out: list[dict] = []
+    if memory.MODE == "postgres" and memory._pool is not None:
+        async with memory._pool.connection() as conn:
+            cur = await conn.execute(
+                """select thread_id, count(*) as checkpoints, max(checkpoint_id) as last
+                     from checkpoints where checkpoint_ns = '' group by thread_id
+                     order by max(checkpoint_id) desc limit %s""", (limit,))
+            out = [dict(r) for r in await cur.fetchall()]
+    else:
+        seen: dict[str, dict] = {}
+        async for c in memory._saver.alist(None, limit=500):
+            tid = c.config["configurable"]["thread_id"]
+            seen.setdefault(tid, {"thread_id": tid, "checkpoints": 0})["checkpoints"] += 1
+        out = list(seen.values())[:limit]
+    for t in out:
+        t["running"] = t["thread_id"] in _RUNNING
+    return out

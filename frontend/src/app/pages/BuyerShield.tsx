@@ -58,7 +58,7 @@ export default function BuyerShield() {
   const qc = useQueryClient()
   const shield = useQuery({
     queryKey: ['shield'], queryFn: () => api<{ total_usd: number; by_guard: Record<string, { count: number; usd: number }>; events: GuardEvent[] }>('/api/shield'),
-    enabled: live.mode === 'live', refetchInterval: 6000,
+    retry: 4, refetchInterval: 6000,
   })
   const [steps, setSteps] = useState<{ label: string; state: 'todo' | 'run' | 'ok' | 'err'; note?: string }[]>([])
   const drill = useMutation({
@@ -74,7 +74,7 @@ export default function BuyerShield() {
     onSuccess: () => toast.success('Guard drill finished: every decision is in the ledger'),
   })
 
-  const liveOn = live.mode === 'live' && shield.data
+  const liveOn = !!shield.data
   const byGuard = (id: string) => (liveOn ? shield.data!.by_guard[id]?.usd ?? 0 : SAMPLE[id] ?? 0)
   const total = liveOn ? shield.data!.total_usd : Object.values(SAMPLE).reduce((a, b) => a + b, 0)
   const events = shield.data?.events ?? []
@@ -97,9 +97,9 @@ export default function BuyerShield() {
   return (
     <div className="space-y-5">
       <SectionTitle title="Buyer Shield" subtitle="Seven deterministic guards between the agents and your money. Every decision is recorded, with the PayPal action it allowed or refused."
-        action={<PrimaryButton icon={false} onClick={() => drill.mutate()} disabled={drill.isPending || live.mode !== 'live'}><Play className="size-4" />{drill.isPending ? 'Running drill…' : 'Run guard drill'}</PrimaryButton>} />
+        action={<PrimaryButton icon={false} onClick={() => drill.mutate()} disabled={drill.isPending || !shield.isSuccess}><Play className="size-4" />{drill.isPending ? 'Running drill…' : 'Run guard drill'}</PrimaryButton>} />
 
-      {live.mode !== 'live' && <Callout lead="Showing the demo figures.">The live ledger loads from the API once the backend is reachable ({live.reason}).</Callout>}
+      {!shield.isSuccess && <Callout lead="Showing the demo figures.">The live ledger loads from the API once the backend is reachable ({live.reason}).</Callout>}
 
       <KpiRow items={[
         { label: 'Money protected', value: usd(total), icon: Shield, tone: 'good', note: 'blocked, voided, refunded or deducted' },
@@ -172,7 +172,7 @@ export default function BuyerShield() {
         <CardHeader icon={Shield} tone="good" title="Guard ledger" subtitle="every verdict, newest first (AG Grid)" />
         <div className="h-[420px]">
           <AgGridReact<GuardEvent> theme={glassGridTheme} rowData={events} columnDefs={cols} suppressCellFocus
-            getRowId={(p) => String(p.data.id)} overlayNoRowsTemplate={live.mode === 'live' ? 'No guard decisions yet. Run the guard drill.' : 'Backend offline'} />
+            getRowId={(p) => String(p.data.id)} overlayNoRowsTemplate={shield.isSuccess ? 'No guard decisions yet. Run the guard drill.' : 'Backend offline'} />
         </div>
       </GlassCard>
     </div>

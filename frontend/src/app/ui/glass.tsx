@@ -13,7 +13,9 @@ export function GlassCard({ className, children, delay = 0, ...props }: HTMLMoti
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: EASE, delay }}
-      className={cn('glass rounded-3xl p-5', className)}
+      // Every card is its own scroll container: capped to the visible area, so a long
+      // card scrolls inside itself while its neighbours stay in view.
+      className={cn('glass scrollbar-thin min-w-0 max-h-[calc(100dvh-7.5rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-3xl p-5', className)}
       {...props}
     >
       {children}

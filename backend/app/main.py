@@ -2897,6 +2897,19 @@ async def agents_overview():
             "graph_mermaid": await team.mermaid()}
 
 
+@app.get("/api/agents/threads")
+async def agent_threads(limit: int = 30):
+    """Every thread the team has worked (incidents, po:, payee:, patrol:), newest first."""
+    async with db_conn() as conn:
+        titles = {r["id"]: (r["title"], str(r["status"])) for r in await conn.fetch(
+            "select id, title, status from incidents order by opened_at desc limit 200")}
+    rows = await team.list_threads(limit)
+    for r in rows:
+        t = titles.get(r["thread_id"])
+        r["title"], r["status"] = (t if t else (r["thread_id"].split(":")[0] + " thread", None))
+    return {"threads": rows}
+
+
 @app.get("/api/agents/threads/{thread_id}")
 async def agent_thread(thread_id: str):
     return await team.state(thread_id)

@@ -20,6 +20,9 @@ interface UiState {
   toggleTheme: () => void
   navOpen: boolean
   setNavOpen: (v: boolean) => void
+  /** Desktop sidebar collapsed to an icon rail (remembered). */
+  collapsed: boolean
+  toggleCollapsed: () => void
   /** Simulation Lab log — world events only; money is never simulated. */
   simLog: { at: string; label: string }[]
   logSim: (label: string) => void
@@ -35,6 +38,12 @@ export const useUi = create<UiState>((set, get) => ({
   },
   navOpen: false,
   setNavOpen: (navOpen) => set({ navOpen }),
+  collapsed: (() => { try { return localStorage.getItem('dops-nav-collapsed') === '1' } catch { return false } })(),
+  toggleCollapsed: () => {
+    const c = !get().collapsed
+    try { localStorage.setItem('dops-nav-collapsed', c ? '1' : '0') } catch { /* private mode */ }
+    set({ collapsed: c })
+  },
   simLog: [],
   logSim: (label) => set((s) => ({ simLog: [{ at: new Date().toISOString(), label }, ...s.simLog].slice(0, 30) })),
 }))

@@ -72,7 +72,7 @@ function Copilot() {
   })
   const send = (text = q) => { if (!text.trim()) return; setLog((l) => [...l, { who: 'you', text }]); setQ(''); ask.mutate(text) }
   return (
-    <GlassCard className="flex h-full flex-col">
+    <GlassCard className="flex h-full flex-col xl:max-h-full">
       <CardHeader icon={Sparkles} tone="violet" title="Copilot" subtitle="Gemini ReAct agent · read-only tools · remembers this conversation" />
       <div className="min-h-48 flex-1 space-y-2 overflow-y-auto text-sm">
         {log.length === 0 && (
@@ -100,19 +100,28 @@ function Copilot() {
 }
 
 export default function AgentTeam() {
-  const threads = live.incidents.length ? live.incidents.map((i) => ({ id: i.id, title: i.title, at: i.openedAt }))
-    : data.incidents.map((i) => ({ id: i.id, title: i.title, at: i.openedAt }))
-  const [sel, setSel] = useState<string>(threads[0]?.id ?? 'patrol:NEXA')
+  // Real threads from the checkpoint store; the sample list only when the API is unreachable.
+  const threadList = useQuery({
+    queryKey: ['threads'], refetchInterval: 10_000, retry: 4,
+    queryFn: () => api<{ threads: { thread_id: string; title: string; checkpoints: number; running: boolean }[] }>('/api/agents/threads'),
+  })
+  const threads = threadList.data?.threads.length
+    ? threadList.data.threads.map((t) => ({ id: t.thread_id, title: `${t.title} · ${t.checkpoints} checkpoints${t.running ? ' · running' : ''}`, at: '' }))
+    : (live.incidents.length ? live.incidents : data.incidents).map((i) => ({ id: i.id, title: i.title, at: i.openedAt }))
+  const [picked, setPicked] = useState<string | null>(null)
+  const sel = picked ?? threads[0]?.id ?? 'patrol:NEXA'
+  const setSel = setPicked
   const [custom, setCustom] = useState('')
+  const online = live.mode === 'live' || threadList.isSuccess
 
-  const overview = useQuery({ queryKey: ['agents'], queryFn: () => api<Overview>('/api/agents'), enabled: live.mode === 'live' })
+  const overview = useQuery({ queryKey: ['agents'], queryFn: () => api<Overview>('/api/agents'), enabled: online })
   const thread = useQuery({
     queryKey: ['thread', sel], queryFn: () => api<Thread>(`/api/agents/threads/${encodeURIComponent(sel)}`),
-    enabled: live.mode === 'live' && !!sel, refetchInterval: (q) => (q.state.data?.running ? 2000 : 8000),
+    enabled: online && !!sel, refetchInterval: (q) => (q.state.data?.running ? 2000 : 8000),
   })
   const history = useQuery({
     queryKey: ['history', sel], queryFn: () => api<{ checkpoints: unknown[] }>(`/api/agents/threads/${encodeURIComponent(sel)}/history?limit=100`),
-    enabled: live.mode === 'live' && !!sel,
+    enabled: online && !!sel,
   })
   const decide = useMutation({
     mutationFn: (decision: 'approve' | 'reject') => api(`/api/agent/resume/${encodeURIComponent(sel)}`, { method: 'POST', body: JSON.stringify({ decision, note: 'from Agent Team' }) }),
@@ -121,7 +130,7 @@ export default function AgentTeam() {
   })
   const patrol = useMutation({
     mutationFn: () => api('/api/agents/patrol', { method: 'POST' }),
-    onSuccess: () => { setSel('patrol:NEXA'); toast.success('Sentinel patrol finished') },
+    onSuccess: () => { setSel('patrol:NEXA'); threadList.refetch(); toast.success('Sentinel patrol finished') },
     onError: (e) => toast.error((e as Error).message),
   })
 
@@ -134,18 +143,18 @@ export default function AgentTeam() {
       <SectionTitle title="Agent Team" subtitle="LangGraph multi-agent system: a supervisor routes every turn to one of eight specialists. Each incident is a checkpointed thread."
         action={<div className="flex items-center gap-2">
           <Pill>memory · {overview.data?.memory ?? (live.mode === 'live' ? '…' : 'offline')}</Pill>
-          <SecondaryButton onClick={() => patrol.mutate()} disabled={patrol.isPending || live.mode !== 'live'}>
+          <SecondaryButton onClick={() => patrol.mutate()} disabled={patrol.isPending || !online}>
             <Radar className="size-4" /> {patrol.isPending ? 'Patrolling…' : 'Run Sentinel patrol'}
           </SecondaryButton>
         </div>} />
 
-      {live.mode !== 'live' && (
+      {!online && (
         <Callout lead="Backend not reachable.">The team runs on the API ({live.reason}). Open this page once the backend has woken up.</Callout>
       )}
 
-      <div className="grid gap-5 xl:grid-cols-[340px_1fr_380px]">
-        <div className="space-y-5">
-          <GlassCard>
+      <div className="grid gap-5 xl:h-[calc(100dvh-12rem)] xl:grid-cols-[340px_1fr_380px]">
+        <div className="scrollbar-thin min-h-0 space-y-5 overflow-y-auto overscroll-contain xl:pr-1">
+          <GlassCard className="max-h-none overflow-visible">
             <CardHeader icon={Network} tone="violet" title="The team" subtitle={lastAgent ? `last turn: ${META[lastAgent]?.title}` : 'supervisor + 8 specialists'} />
             <TeamGraph active={thread.data?.running ? lastAgent : thread.data?.next?.[0] ?? lastAgent} />
             <ul className="mt-2 space-y-1.5 text-xs">
@@ -158,10 +167,10 @@ export default function AgentTeam() {
               })}
             </ul>
           </GlassCard>
-          <GlassCard>
+          <GlassCard className="max-h-none overflow-visible">
             <CardHeader icon={Bot} tone="azure" title="Threads" subtitle="one per incident · plus patrol and payee threads" />
             <div className="space-y-1">
-              {[...threads, { id: 'patrol:NEXA', title: 'Sentinel patrol', at: '' }].map((t) => (
+              {[...threads, ...(threads.some((t) => t.id.startsWith('patrol:')) ? [] : [{ id: 'patrol:NEXA', title: 'Sentinel patrol', at: '' }])].map((t) => (
                 <button key={t.id} onClick={() => setSel(t.id)}
                   className={cn('w-full rounded-xl px-3 py-2 text-left text-xs transition', sel === t.id ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-white/30 dark:hover:bg-white/5')}>
                   <b>{t.id}</b> <span className="text-muted-foreground">· {t.title}</span>
@@ -177,7 +186,7 @@ export default function AgentTeam() {
           </GlassCard>
         </div>
 
-        <GlassCard>
+        <GlassCard className="xl:max-h-full">
           <CardHeader icon={BrainCircuit} tone="violet" title={`Thread ${sel}`}
             subtitle={`phase ${v.phase ?? '—'} · ${v.turns ?? 0} turns · ${history.data?.checkpoints.length ?? 0} checkpoints`}
             action={thread.data?.waiting_for_human ? <StatusBadge tone="rose" dot>waiting for you</StatusBadge>
@@ -197,7 +206,7 @@ export default function AgentTeam() {
           )}
 
           {!trail.length ? (
-            <EmptyState icon={Bot} title="No turns yet" hint={live.mode === 'live' ? 'Start a scenario in the Simulation Lab or run a patrol; turns stream in here.' : 'Connect the backend to see live threads.'} />
+            <EmptyState icon={Bot} title="No turns yet" hint={online ? 'Start a scenario in the Simulation Lab or run a patrol; turns stream in here.' : 'Connect the backend to see live threads.'} />
           ) : (
             <ol className="relative space-y-2 border-l border-border/60 pl-4">
               {trail.map((t, i) => {

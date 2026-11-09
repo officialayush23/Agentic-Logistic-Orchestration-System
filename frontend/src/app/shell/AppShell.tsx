@@ -1,4 +1,4 @@
-import { Bell, HelpCircle, LogOut, Menu, Moon, Search, ShieldCheck, Sun, Workflow, X } from 'lucide-react'
+import { Bell, HelpCircle, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, ShieldCheck, Sun, Workflow, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { Dialog, DropdownMenu } from 'radix-ui'
 import { NavLink, Outlet, useLocation } from 'react-router'
@@ -8,15 +8,18 @@ import { usd } from '../data/source'
 import { useUi } from '../store'
 import { footerNav, mainNav, type NavItem } from './nav'
 
-function NavItemLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
+function NavItemLink({ item, onNavigate, collapsed }: { item: NavItem; onNavigate?: () => void; collapsed?: boolean }) {
   const Icon = item.icon
   return (
     <NavLink
       to={item.to}
       end={item.end}
       onClick={onNavigate}
+      title={collapsed ? item.label : undefined}
+      aria-label={collapsed ? item.label : undefined}
       className={({ isActive }) =>
-        cn('relative flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+        cn('relative flex items-center gap-3 rounded-xl py-2 text-sm font-medium transition-colors',
+          collapsed ? 'justify-center px-0' : 'px-3',
           isActive ? 'text-accent-foreground' : 'text-sidebar-foreground/75 hover:bg-white/50 dark:hover:bg-white/5')}
     >
       {({ isActive }) => (
@@ -28,10 +31,11 @@ function NavItemLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => v
               transition={{ type: 'spring', stiffness: 420, damping: 34 }}
             />
           )}
-          <Icon className="relative size-4" />
-          <span className="relative">{item.label}</span>
-          {item.count ? (
-            <span className="relative ml-auto rounded-md bg-primary/10 px-1.5 text-[11px] font-semibold text-primary tabular-nums">{item.count}</span>
+          <Icon className="relative size-4 shrink-0" />
+          {!collapsed && <span className="relative truncate">{item.label}</span>}
+          {item.count ? (collapsed
+            ? <span className="absolute right-1.5 top-1 size-1.5 rounded-full bg-primary" />
+            : <span className="relative ml-auto rounded-md bg-primary/10 px-1.5 text-[11px] font-semibold text-primary tabular-nums">{item.count}</span>
           ) : null}
         </>
       )}
@@ -39,37 +43,53 @@ function NavItemLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => v
   )
 }
 
-function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarBody({ onNavigate, collapsed = false, onToggle }: { onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
   return (
     <>
-      <div className="mb-6 flex items-center gap-3 px-1">
-        <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-violet to-azure text-white shadow-md shadow-violet/30">
+      <div className={cn('mb-5 flex items-center gap-3', collapsed ? 'flex-col px-0' : 'px-1')}>
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-violet to-azure text-white shadow-md shadow-violet/30">
           <Workflow className="size-4" />
         </span>
-        <div className="min-w-0">
-          <p className="text-[15px] font-bold tracking-tight text-primary">DisruptionOps</p>
-          <p className="truncate text-[11px] text-muted-foreground">Autonomous supply-chain finance</p>
-        </div>
+        {!collapsed && (
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-bold tracking-tight text-primary">DisruptionOps</p>
+            <p className="truncate text-[11px] text-muted-foreground">Autonomous supply-chain finance</p>
+          </div>
+        )}
+        {onToggle && (
+          <button onClick={onToggle} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="grid size-8 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-white/60 dark:hover:bg-white/10">
+            {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </button>
+        )}
       </div>
-      <nav className="flex flex-col gap-0.5">
-        {mainNav.map((i) => <NavItemLink key={i.to} item={i} onNavigate={onNavigate} />)}
-      </nav>
-      <div className="mt-auto flex flex-col gap-3 pt-4">
-        <div className="rounded-2xl bg-gradient-to-br from-violet/90 to-azure/90 p-4 text-white shadow-lg shadow-violet/25">
-          <ShieldCheck className="mb-2 size-5" />
-          <p className="text-sm font-semibold">Agent spending mandate</p>
-          <p className="mt-1 text-xs text-white/80">
-            Holds funds automatically. Releases above {usd(AUTHORITY_LIMIT_USD)} need a human code.
-          </p>
-          <span className="mt-2 inline-block rounded-md bg-white/20 px-1.5 py-0.5 text-[11px]">PayPal sandbox · live</span>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          {footerNav.map((i) => <NavItemLink key={i.to} item={i} onNavigate={onNavigate} />)}
-          <a href="https://github.com/officialayush23" target="_blank" rel="noreferrer"
-             className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-sidebar-foreground/75 hover:bg-white/50 dark:hover:bg-white/5">
-            <HelpCircle className="size-4" /> Help & docs
+      {/* Only the nav scrolls; brand on top and the mandate card stay put. */}
+      <nav className="scrollbar-thin -mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-1">
+        {mainNav.map((i) => <NavItemLink key={i.to} item={i} onNavigate={onNavigate} collapsed={collapsed} />)}
+        <div className="mt-3 flex flex-col gap-0.5 border-t border-white/40 pt-3 dark:border-white/10">
+          {footerNav.map((i) => <NavItemLink key={i.to} item={i} onNavigate={onNavigate} collapsed={collapsed} />)}
+          <a href="https://github.com/officialayush23/Agentic-Logistic-Orchestration-System" target="_blank" rel="noreferrer"
+             title={collapsed ? 'Help & docs' : undefined}
+             className={cn('flex items-center gap-3 rounded-xl py-2 text-sm font-medium text-sidebar-foreground/75 hover:bg-white/50 dark:hover:bg-white/5', collapsed ? 'justify-center' : 'px-3')}>
+            <HelpCircle className="size-4 shrink-0" /> {!collapsed && 'Help & docs'}
           </a>
         </div>
+      </nav>
+      <div className="shrink-0 pt-3">
+        {collapsed ? (
+          <span title={`Agent spending mandate: releases above ${usd(AUTHORITY_LIMIT_USD)} need a human code`}
+            className="mx-auto grid size-10 place-items-center rounded-2xl bg-gradient-to-br from-violet/90 to-azure/90 text-white shadow-lg shadow-violet/25">
+            <ShieldCheck className="size-4" />
+          </span>
+        ) : (
+          <div className="rounded-2xl bg-gradient-to-br from-violet/90 to-azure/90 p-3.5 text-white shadow-lg shadow-violet/25">
+            <p className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck className="size-4" />Agent spending mandate</p>
+            <p className="mt-1 text-xs text-white/80">
+              Holds funds automatically. Releases above {usd(AUTHORITY_LIMIT_USD)} need a human code.
+            </p>
+            <span className="mt-2 inline-block rounded-md bg-white/20 px-1.5 py-0.5 text-[11px]">PayPal sandbox · live</span>
+          </div>
+        )}
       </div>
     </>
   )
@@ -150,15 +170,21 @@ function Topbar() {
 
 export function AppShell() {
   const { pathname } = useLocation()
+  const { collapsed, toggleCollapsed } = useUi()
   return (
-    <div className="mx-auto flex max-w-[1680px] gap-4 p-4">
-      <aside className="glass sticky top-4 hidden h-[calc(100svh-2rem)] w-60 shrink-0 flex-col rounded-3xl p-4 lg:flex">
-        <SidebarBody />
-      </aside>
-      <main className="min-w-0 flex-1 space-y-4">
-        <Topbar />
+    // The shell owns the viewport: the sidebar and the page scroll independently,
+    // and each card scrolls its own content (see GlassCard).
+    <div className="mx-auto flex h-dvh max-w-[1680px] gap-4 overflow-hidden p-4">
+      <motion.aside
+        animate={{ width: collapsed ? 76 : 240 }}
+        transition={{ type: 'spring', stiffness: 380, damping: 36 }}
+        className="glass hidden h-full shrink-0 flex-col overflow-hidden rounded-3xl p-3 lg:flex">
+        <SidebarBody collapsed={collapsed} onToggle={toggleCollapsed} />
+      </motion.aside>
+      <main className="flex min-w-0 flex-1 flex-col gap-4">
+        <div className="shrink-0"><Topbar /></div>
         {/* key on path so each screen re-runs its mount animation */}
-        <div key={pathname} className="space-y-4">
+        <div key={pathname} className="scrollbar-thin min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden pb-2 pr-1">
           <Outlet />
         </div>
       </main>
