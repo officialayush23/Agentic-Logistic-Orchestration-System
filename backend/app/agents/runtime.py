@@ -175,7 +175,8 @@ async def list_threads(limit: int = 30) -> list[dict]:
         async with memory._pool.connection() as conn:
             cur = await conn.execute(
                 """select thread_id, count(*) as checkpoints, max(checkpoint_id) as last
-                     from checkpoints where checkpoint_ns = '' group by thread_id
+                     from checkpoints where checkpoint_ns = '' and thread_id not like 'copilot:%%'
+                    group by thread_id
                      order by max(checkpoint_id) desc limit %s""", (limit,))
             out = [dict(r) for r in await cur.fetchall()]
     else:

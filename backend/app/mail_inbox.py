@@ -159,9 +159,9 @@ async def handle(msg: dict[str, Any]) -> dict[str, Any] | None:
                         c["date"] = f"{raw['committed_date']}T12:00:00+00:00"
                 for po in c["po_ids"]:
                     row = await conn.fetchrow(
-                        """update purchase_orders set revised_date=$2::timestamptz
+                        """update purchase_orders set revised_date=$2
                             where id=$1 and supplier_id=$3 returning component_id, promised_date""",
-                        po, c["date"], sup["id"])
+                        po, datetime.fromisoformat(c["date"]), sup["id"])
                     if row and row["promised_date"] and datetime.fromisoformat(c["date"]) > row["promised_date"]:
                         from . import agent as domain
                         await domain.wake(conn, component_id=row["component_id"], trigger="supplier_push_out", po_id=po)
