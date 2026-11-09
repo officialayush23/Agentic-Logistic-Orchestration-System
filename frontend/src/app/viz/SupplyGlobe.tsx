@@ -11,6 +11,7 @@ import { componentById, data, poById, shipmentByPo, supplierById } from '../data
 import type { ShipmentStatus } from '../data/types'
 import { useUi } from '../store'
 import { hex } from './palette'
+import { subtiers } from '../data/live'
 
 type ArcStatus = ShipmentStatus | 'outbound'
 export interface Arc {
@@ -122,6 +123,30 @@ export function SupplyGlobe({ projectId, height = 460, autoRotate = true, onSele
       }),
     }
 
+    // Sub-tier: dashed links from each supplier to the plants *it* buys from. A node
+    // shared by two "independent" sources is the hidden single point of failure.
+    const tiers = subtiers().filter((t) => supplierById[t.supplierId] && (!projectId || supplierIds.includes(t.supplierId)))
+    const subtierLinks: FeatureCollection = {
+      type: 'FeatureCollection',
+      features: tiers.map((t) => {
+        const s = supplierById[t.supplierId]
+        return { type: 'Feature', properties: { color: t.sharedBy > 1 ? hex.crit : hex.violet,
+          label: `<b>${s.name}</b> buys ${t.category ?? 'parts'} from <b>${t.name}</b>` },
+          geometry: { type: 'LineString', coordinates: greatCircle([s.lng, s.lat], [t.lng, t.lat]) } }
+      }),
+    }
+    const nodes = [...new Map(tiers.map((t) => [t.name, t])).values()]
+    const subtierNodes: FeatureCollection = {
+      type: 'FeatureCollection',
+      features: nodes.map((t) => ({ type: 'Feature', properties: {
+        name: t.sharedBy > 1 ? `${t.name} · shared sub-supplier` : t.name,
+        color: t.sharedBy > 1 ? hex.crit : hex.violet,
+        label: t.sharedBy > 1
+          ? `<b>${t.name}</b> (${t.city})<br/>Shared by ${t.sharedBy} of your "independent" sources: one fire here stops both.`
+          : `<b>${t.name}</b> (${t.city})<br/>Tier-2 supplier` },
+        geometry: { type: 'Point', coordinates: [t.lng, t.lat] } })),
+    }
+
     let raf = 0, step = -1, spinning = autoRotate && !reduced && !projectId
     const popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, className: 'globe-popup', offset: 10 })
 
@@ -136,6 +161,8 @@ export function SupplyGlobe({ projectId, height = 460, autoRotate = true, onSele
       map.addSource('routes', { type: 'geojson', data: routes })
       map.addSource('positions', { type: 'geojson', data: positions })
       map.addSource('suppliers', { type: 'geojson', data: suppliersFc })
+      map.addSource('subtier-links', { type: 'geojson', data: subtierLinks })
+      map.addSource('subtier-nodes', { type: 'geojson', data: subtierNodes })
       map.addSource('plant', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [data.plant.lng, data.plant.lat] } } as const })
 
       const labelPaint = { 'text-halo-color': dark ? 'rgba(20,18,45,0.9)' : 'rgba(255,255,255,0.92)', 'text-halo-width': 1.5 }
@@ -143,6 +170,12 @@ export function SupplyGlobe({ projectId, height = 460, autoRotate = true, onSele
       map.addLayer({ id: 'routes-base', type: 'line', source: 'routes', slot: 'top', layout: { 'line-cap': 'round' }, paint: { 'line-emissive-strength': 1, 'line-color': ['get', 'color'], 'line-width': ['case', ['==', ['get', 'status'], 'claim_mismatch'], 2.6, 1.8], 'line-opacity': 0.45 } })
       map.addLayer({ id: 'routes-dash', type: 'line', source: 'routes', slot: 'top', paint: { 'line-emissive-strength': 1, 'line-color': ['get', 'color'], 'line-width': ['case', ['==', ['get', 'status'], 'claim_mismatch'], 3, 2.2], 'line-dasharray': [0, 4, 3] } })
       map.addLayer({ id: 'routes-hit', type: 'line', source: 'routes', slot: 'top', paint: { 'line-emissive-strength': 1, 'line-color': '#000', 'line-width': 14, 'line-opacity': 0 } })
+      map.addLayer({ id: 'subtier-links', type: 'line', source: 'subtier-links', slot: 'top', paint: { 'line-emissive-strength': 1, 'line-color': ['get', 'color'], 'line-width': 1.6, 'line-opacity': 0.8, 'line-dasharray': [1.5, 2] } })
+      map.addLayer({ id: 'subtier-halo', type: 'circle', source: 'subtier-nodes', slot: 'top', paint: { 'circle-emissive-strength': 1, 'circle-radius': 11, 'circle-color': ['get', 'color'], 'circle-opacity': 0.2 } })
+      map.addLayer({ id: 'subtier-nodes', type: 'circle', source: 'subtier-nodes', slot: 'top', paint: { 'circle-emissive-strength': 1, 'circle-radius': 5, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } })
+      map.addLayer({ id: 'subtier-names', type: 'symbol', source: 'subtier-nodes', slot: 'top', minzoom: 1.6,
+        layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'text-offset': [0, 1.2], 'text-anchor': 'top' },
+        paint: { 'text-emissive-strength': 1, 'text-color': hex.crit, 'text-halo-color': dark ? 'rgba(20,18,45,0.9)' : 'rgba(255,255,255,0.92)', 'text-halo-width': 1.5 } })
       map.addLayer({ id: 'suppliers-halo', type: 'circle', source: 'suppliers', slot: 'top', paint: { 'circle-emissive-strength': 1, 'circle-radius': 9, 'circle-color': ['get', 'color'], 'circle-opacity': 0.18 } })
       map.addLayer({ id: 'suppliers', type: 'circle', source: 'suppliers', slot: 'top', paint: { 'circle-emissive-strength': 1, 'circle-radius': 4.5, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } })
       map.addLayer({ id: 'supplier-names', type: 'symbol', source: 'suppliers', slot: 'top', minzoom: 2.4,
@@ -171,7 +204,7 @@ export function SupplyGlobe({ projectId, height = 460, autoRotate = true, onSele
       }
       raf = requestAnimationFrame(tick)
 
-      for (const layer of ['routes-hit', 'suppliers', 'positions']) {
+      for (const layer of ['routes-hit', 'suppliers', 'positions', 'subtier-nodes', 'subtier-links']) {
         map.on('mouseenter', layer, (e) => {
           map.getCanvas().style.cursor = 'pointer'
           const f = e.features?.[0] as unknown as { properties?: Record<string, string> } | undefined

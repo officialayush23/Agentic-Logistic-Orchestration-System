@@ -16,6 +16,7 @@ export interface GuardEvent {
   amount_usd: number; reason: string; agent?: string; created_at: string
 }
 export interface BuyTimer { projectId: string; componentId: string; name?: string; qty: number; needBy: string; orderBy: string; orderedPoId?: string | null; approvedAlternates?: unknown[] }
+export interface Subtier { supplierId: string; name: string; city?: string; lat: number; lng: number; category?: string; sharedBy: number }
 export interface Envelope { projectId: string; category?: string | null; windowStart: string; windowEnd: string; capUsd: number }
 export interface LiveExtras {
   mode: 'live' | 'sample'
@@ -23,9 +24,10 @@ export interface LiveExtras {
   shield: { total_usd: number; by_guard: Record<string, { count: number; usd: number }> }
   buyTimers: BuyTimer[]
   budgetEnvelopes: Envelope[]
+  subtiers: Subtier[]
   incidents: { id: string; title: string; stage: string; severity: string; openedAt: string }[]
 }
-export const live: LiveExtras = { mode: 'sample', shield: { total_usd: 0, by_guard: {} }, buyTimers: [], budgetEnvelopes: [], incidents: [] }
+export const live: LiveExtras = { mode: 'sample', shield: { total_usd: 0, by_guard: {} }, buyTimers: [], budgetEnvelopes: [], subtiers: [], incidents: [] }
 
 let token: string | null = null
 function stored(): string | null { try { return localStorage.getItem('dops_token') } catch { return null } }
@@ -64,6 +66,7 @@ type Snapshot = Partial<{
   incidents: LiveExtras['incidents']
   buyTimers: BuyTimer[]
   budgetEnvelopes: Envelope[]
+  subtiers: Subtier[]
   shield: LiveExtras['shield']
 }>
 
@@ -112,7 +115,7 @@ export async function bootLive(waitMs = 7000): Promise<void> {
     const s = await api<Snapshot>('/api/ui/snapshot', {}, waitMs)
     overlay(s)
     Object.assign(live, {
-      mode: 'live', shield: s.shield ?? live.shield, buyTimers: s.buyTimers ?? [], budgetEnvelopes: s.budgetEnvelopes ?? [],
+      mode: 'live', shield: s.shield ?? live.shield, buyTimers: s.buyTimers ?? [], budgetEnvelopes: s.budgetEnvelopes ?? [], subtiers: s.subtiers ?? [],
       incidents: (s.incidents ?? []).map((i) => ({ id: i.id, title: i.title, stage: i.stage, severity: i.severity, openedAt: i.openedAt })),
     })
   } catch (e) {
@@ -135,4 +138,11 @@ export function buyTimers(projectId?: string): BuyTimer[] {
     }
   })
   return projectId ? all.filter((t) => t.projectId === projectId) : all
+}
+
+/** Sub-tier suppliers (who your suppliers buy from). Sample: two "independent" connector sources share one plating house. */
+export function subtiers(): Subtier[] {
+  if (live.subtiers.length) return live.subtiers
+  const penang = { name: 'Penang Plating Works', city: 'Penang', lat: 5.41, lng: 100.33, category: 'connector plating', sharedBy: 2 }
+  return [{ supplierId: 'SUP-42', ...penang }, { supplierId: 'SUP-77', ...penang }]
 }

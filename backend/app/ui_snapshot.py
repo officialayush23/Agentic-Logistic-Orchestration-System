@@ -240,12 +240,21 @@ async def _envelopes(conn):
              "windowEnd": _iso(r["window_end"]), "capUsd": float(r["cap_usd"])} for r in rows]
 
 
+async def _subtiers(conn):
+    rows = await conn.fetch(
+        """select supplier_id, subtier_name, city, lat, lon, part_category,
+                  count(*) over (partition by subtier_name) as shared
+             from supplier_subtiers order by subtier_name, supplier_id""")
+    return [{"supplierId": r["supplier_id"], "name": r["subtier_name"], "city": r["city"], "lat": r["lat"],
+             "lng": r["lon"], "category": r["part_category"], "sharedBy": int(r["shared"])} for r in rows]
+
+
 async def build(conn) -> dict[str, Any]:
     sections = {
         "components": _components, "suppliers": _suppliers, "projects": _projects, "customers": _customers,
         "purchaseOrders": _pos, "shipments": _shipments, "payments": _payments, "incidents": _incidents,
         "approvals": _approvals, "feed": _feed, "emails": _emails, "bom": _bom,
-        "buyTimers": _timers, "budgetEnvelopes": _envelopes,
+        "buyTimers": _timers, "budgetEnvelopes": _envelopes, "subtiers": _subtiers,
     }
     out: dict[str, Any] = {"AUTHORITY_LIMIT_USD": AUTHORITY_LIMIT_USD, "INR_PER_USD": INR_PER_USD}
     for k, fn in sections.items():

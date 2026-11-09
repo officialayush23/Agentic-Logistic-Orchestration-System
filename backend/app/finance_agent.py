@@ -279,7 +279,19 @@ async def _capture_and_pay(conn, p: dict, *, fraction: float, incident_id: str |
     # Payee lock: decide the receiver before any money moves.
     pv, payee = await guards.payee_lock(conn, p["supplier_id"])
     await guards.record(conn, pv, po_id=po_id, supplier_id=p["supplier_id"], incident_id=incident_id)
-    body_amount = round(max(0.0, accepted - credit - retention), 2)
+    # Early-pay optimizer: a 2/10 net 30 term is worth ~37%/yr. Paying now, inside
+    # the discount window, means capturing the discounted amount.
+    discount = 0.0
+    take, rate = guards.early_pay(float(po.get("discount_pct") or 0) or None, po.get("discount_days"), po.get("net_days"),
+                                  cost_of_capital=float(os.getenv("COST_OF_CAPITAL", "0.12")))
+    if take:
+        discount = round((accepted - credit) * float(po["discount_pct"]) / 100, 2)
+        ev = guards.Verdict("early_pay", "adjust",
+                            f"Paid inside the {po['discount_days']}-day window: {float(po['discount_pct']):g}% discount "
+                            f"(${discount:,.2f}) taken, worth {rate * 100:.0f}% a year vs {float(os.getenv('COST_OF_CAPITAL', '0.12')) * 100:.0f}% cost of capital.",
+                            amount_usd=discount, detail={"annualized": rate})
+        await guards.record(conn, ev, po_id=po_id, supplier_id=p["supplier_id"], incident_id=incident_id)
+    body_amount = round(max(0.0, accepted - credit - retention - discount), 2)
     partial = body_amount < held - 0.005
     try:
         if partial:
@@ -305,6 +317,8 @@ async def _capture_and_pay(conn, p: dict, *, fraction: float, incident_id: str |
     parts = [f"${body_amount:,.2f} captured after verified goods"]
     if credit:
         parts.append(f"late credit -${credit:,.2f}")
+    if discount:
+        parts.append(f"early-pay discount -${discount:,.2f}")
     if retention:
         parts.append(f"retention ${retention:,.2f} still held")
     await _event(conn, p["id"], "PAYMENT.CAPTURE.COMPLETED", " · ".join(parts) + ".",
