@@ -255,7 +255,8 @@ async def _timers(conn):
         order_by = r["need_by"] - timedelta(days=r["lead_time_days"] + r["transit_days"] + r["buffer_days"])
         out.append({"projectId": r["project_id"], "componentId": r["component_id"], "name": r["display_name"],
                     "qty": r["qty"], "needBy": _iso(r["need_by"]), "orderBy": _iso(order_by),
-                    "orderedPoId": r["ordered_po_id"], "approvedAlternates": r["approved_alternates"]})
+                    "orderedPoId": r["ordered_po_id"], "approvedAlternates": r["approved_alternates"],
+                    "eolDate": _iso(r["eol_date"]), "ltbDate": _iso(r["ltb_date"])})
     return out
 
 

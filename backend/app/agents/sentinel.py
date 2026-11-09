@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from .. import finance_agent, guards
+from .. import agent as domain, finance_agent, guards
 from ..core import db_conn
 from . import memory
 from ._common import ctx_of, enter
@@ -54,11 +54,19 @@ async def _patrol(state: dict, org: str) -> dict:
                            "name": r["display_name"], "order_by": order_by.isoformat(),
                            "hours_left": round(left_h, 1), "state": colour})
             if colour in ("red", "late"):
+                # Hand the part to the team: risk → sourcing (approved alternates and
+                # the solver) → procurement → Treasurer holds, all through the guards.
+                try:
+                    handed = await domain.wake(conn, component_id=r["component_id"], trigger="buy_timer")
+                except Exception:  # noqa: BLE001
+                    handed = None
+                timers[-1]["incident_id"] = handed
                 await guards.record(conn, guards.Verdict(
                     "buy_timer", "escalate",
                     f"{r['project_id']}: order {r['display_name'] or r['component_id']} by "
-                    f"{order_by:%d %b} or the project slips ({left_h:.0f} h left)."),
-                    agent="sentinel")
+                    f"{order_by:%d %b} or the project slips ({left_h:.0f} h left)."
+                    + (f" Handed to the team as {handed}." if handed else " Stock covers it for now; watching.")),
+                    incident_id=handed, agent="sentinel")
         try:
             po_rows = await conn.fetch(
                 """select id, supplier_id, promised_date, revised_date, acknowledged_at, created_at

@@ -61,6 +61,10 @@ copilot: Gemini ReAct agent with read-only tools (projects, threads, payments, s
 
 Fair price (should-cost / last paid / index de-escalation) · budget envelope per project and date window · payee lock (72 h cooling-off + owner code) · duplicate invoice / PO · pay-on-proof · late-delivery credit (partial capture) · quality holdback + retention · hold expiry. Every verdict is a row in `guard_events`, and the "money protected" numbers are summed from that table.
 
+**Inbound email:** `backend/app/mail_inbox.py` polls the agent inbox over IMAP (Gmail app password, same as SMTP). Supplier replies are parsed deterministically first; Gemini only sharpens dates. Payee-change requests go to the Treasurer's payee-lock thread, acknowledgements mark the PO, and new dates become push-outs the team re-plans. `POST /api/inbox/simulate` pushes one email through the same pipeline. Put the supplier id in the subject (`[SUP-21]`) to drive it from any inbox.
+
+**Human decisions** (Approvals page, all live): money releases above the authority limit (6-digit emailed code), agent plans paused at a LangGraph `interrupt()`, and payee changes (approvable only after the 72 h cooling-off).
+
 **See every guard fire, live, against the PayPal sandbox:** use Buyer Shield → **Run guard drill** in the UI, or run `python scripts/demo_shield.py https://agentic-logistic-orchestration-system.onrender.com`.
 
 ### Sponsor tools

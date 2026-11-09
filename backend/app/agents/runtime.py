@@ -184,6 +184,12 @@ async def list_threads(limit: int = 30) -> list[dict]:
             tid = c.config["configurable"]["thread_id"]
             seen.setdefault(tid, {"thread_id": tid, "checkpoints": 0})["checkpoints"] += 1
         out = list(seen.values())[:limit]
+    g = await graph()
     for t in out:
         t["running"] = t["thread_id"] in _RUNNING
+        snap = await g.aget_state(_cfg(t["thread_id"]))
+        req = [i.value for task in (snap.tasks or []) for i in (task.interrupts or [])]
+        t["waiting_for_human"] = bool(req)
+        t["request"] = req[0] if req else None
+        t["phase"] = (snap.values or {}).get("phase")
     return out

@@ -15,7 +15,7 @@ export interface GuardEvent {
   id: number; guard: string; outcome: string; po_id?: string; supplier_id?: string; incident_id?: string
   amount_usd: number; reason: string; agent?: string; created_at: string
 }
-export interface BuyTimer { projectId: string; componentId: string; name?: string; qty: number; needBy: string; orderBy: string; orderedPoId?: string | null; approvedAlternates?: unknown[] }
+export interface BuyTimer { projectId: string; componentId: string; name?: string; qty: number; needBy: string; orderBy: string; orderedPoId?: string | null; approvedAlternates?: unknown[]; eolDate?: string | null; ltbDate?: string | null }
 export interface Subtier { supplierId: string; name: string; city?: string; lat: number; lng: number; category?: string; sharedBy: number }
 export interface Envelope { projectId: string; category?: string | null; windowStart: string; windowEnd: string; capUsd: number }
 export interface LiveExtras {

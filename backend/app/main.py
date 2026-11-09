@@ -17,6 +17,7 @@ from fastapi import (Depends, FastAPI, Header, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from datetime import datetime, timezone
 from .core import (APPROVAL_THRESHOLD_INR, CLOCK, HUB, close_db, db, db_conn, emit,
                     set_run_context)
 from . import injector
@@ -128,6 +129,8 @@ async def _agent_team() -> None:
             log.info("agent team ready, memory=%s", agent_memory.MODE)
         except Exception as exc:  # noqa: BLE001
             log.warning("agent memory init failed: %s", exc)
+        from . import mail_inbox
+        asyncio.create_task(mail_inbox.run_forever())   # supplier replies → agent team
         every = float(os.getenv("PATROL_MINUTES", "15")) * 60
         while every > 0:
             await asyncio.sleep(every)
@@ -2984,3 +2987,58 @@ async def shield_hold(po_id: str):
 async def shield_retention(po_id: str):
     async with db_conn() as conn:
         return await finance_agent.release_retention(conn, po_id)
+
+
+class PayeeDecision(BaseModel):
+    decision: str            # approve | reject
+
+
+@app.get("/api/agents/payee-changes")
+async def payee_changes():
+    async with db_conn() as conn:
+        rows = await conn.fetch(
+            """select r.*, s.name as supplier_name, s.paypal_email_verified as current_email
+                 from payee_change_requests r left join suppliers s on s.id = r.supplier_id
+                order by r.id desc limit 30""")
+    return {"requests": [dict(r) for r in rows]}
+
+
+@app.post("/api/agents/payee-changes/{request_id}/decide")
+async def payee_change_decide(request_id: int, b: PayeeDecision,
+                              who: dict = Depends(auth.requires("owner", "approver"))):
+    """A payee change only lands after the cooling-off period, and only by an owner/approver."""
+    if b.decision not in ("approve", "reject"):
+        raise HTTPException(400, "decision must be 'approve' or 'reject'")
+    async with db_conn() as conn:
+        r = await conn.fetchrow("select * from payee_change_requests where id=$1", request_id)
+        if not r or r["status"] != "pending":
+            raise HTTPException(404, "No pending payee change with that id.")
+        if b.decision == "approve":
+            if r["cooling_until"] > datetime.now(timezone.utc):
+                raise HTTPException(409, f"Cooling-off until {r['cooling_until']:%d %b %H:%M} UTC: "
+                                         "the supplier's contact on file has time to object.")
+            await conn.execute("update suppliers set paypal_email_verified=$2, paypal_email=$2, payee_locked_at=now() "
+                               "where id=$1", r["supplier_id"], r["new_email"])
+        await conn.execute("update payee_change_requests set status=$2 where id=$1", request_id,
+                           "approved" if b.decision == "approve" else "rejected")
+        await emit(conn, incident_id=None, actor="human", event_type="PAYEE_CHANGE_DECIDED",
+                   human_summary=f"{who.get('email') or 'Approver'} {b.decision}d the payee change for "
+                                 f"{r['supplier_id']} to {r['new_email']}.",
+                   payload={"request_id": request_id, "decision": b.decision})
+    return {"ok": True, "decision": b.decision}
+
+
+class InboundEmail(BaseModel):
+    sender: str
+    subject: str
+    body: str
+
+
+@app.post("/api/inbox/simulate")
+async def inbox_simulate(b: InboundEmail):
+    """Feed one email through the exact inbound pipeline (for demos without a mailbox)."""
+    from . import mail_inbox
+    out = await mail_inbox.handle({"from": b.sender.lower(), "subject": b.subject, "body": b.body})
+    if out is None:
+        raise HTTPException(404, "No supplier matched: put the supplier id in the subject, e.g. [SUP-21].")
+    return out

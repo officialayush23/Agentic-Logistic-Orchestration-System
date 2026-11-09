@@ -54,6 +54,35 @@ function Countdown({ iso }: { iso: string }) {
   return <StatusBadge tone={tone} dot>{left < 0 ? 'late by ' : ''}{d}d {hh}h {mm}m</StatusBadge>
 }
 
+interface LivePayment { id: number; po_id: string; supplier_id: string; state: string; amount_usd: number; captured_usd?: number; retention_usd?: number; retention_until?: string }
+
+function RetentionCard() {
+  const qc = useQueryClient()
+  const pays = useQuery({ queryKey: ['payments-live'], queryFn: () => api<LivePayment[]>('/api/finance/payments'), retry: 3, refetchInterval: 10_000 })
+  const release = useMutation({
+    mutationFn: (po: string) => api(`/api/shield/retention/${po}`, { method: 'POST' }),
+    onSuccess: (_, po) => { toast.success(`Retention on ${po} captured and paid to the locked payee`); qc.invalidateQueries({ queryKey: ['payments-live'] }) },
+    onError: (e) => toast.error((e as Error).message.slice(0, 160)),
+  })
+  const held = (pays.data ?? []).filter((p) => p.state === 'retention_held')
+  if (!held.length) return null
+  return (
+    <GlassCard>
+      <CardHeader icon={Hourglass} tone="azure" title="Retention held" subtitle="Paid for accepted units already; the rest waits for line acceptance" />
+      <div className="space-y-2">
+        {held.map((p) => (
+          <div key={p.id} className="glass flex flex-wrap items-center gap-3 rounded-xl px-3 py-2 text-sm">
+            <b>{p.po_id}</b>
+            <span className="text-muted-foreground">captured {usd(Number(p.captured_usd ?? 0))} of {usd(Number(p.amount_usd))}</span>
+            <StatusBadge tone="azure">retention {usd(Number(p.retention_usd ?? 0))}</StatusBadge>
+            <PrimaryButton className="ml-auto" disabled={release.isPending} onClick={() => release.mutate(p.po_id)}>Line accepted: release</PrimaryButton>
+          </div>
+        ))}
+      </div>
+    </GlassCard>
+  )
+}
+
 export default function BuyerShield() {
   const qc = useQueryClient()
   const shield = useQuery({
@@ -142,7 +171,11 @@ export default function BuyerShield() {
             {timers.slice().sort((a, b) => +new Date(a.orderBy) - +new Date(b.orderBy)).map((t) => (
               <div key={`${t.projectId}-${t.componentId}`} className="glass flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm">
                 <span className="min-w-0"><b>{t.name ?? t.componentId}</b> <span className="text-muted-foreground">· {projectById[t.projectId]?.name ?? t.projectId} · {t.qty.toLocaleString('en-IN')} pcs</span></span>
-                {t.orderedPoId ? <StatusBadge tone="good">ordered · {t.orderedPoId}</StatusBadge> : <Countdown iso={t.orderBy} />}
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {t.ltbDate && <StatusBadge tone="warn">EOL · last buy {new Date(t.ltbDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</StatusBadge>}
+                  {!!t.approvedAlternates?.length && <StatusBadge tone="violet">{t.approvedAlternates.length} approved alt</StatusBadge>}
+                  {t.orderedPoId ? <StatusBadge tone="good">ordered · {t.orderedPoId}</StatusBadge> : <Countdown iso={t.orderBy} />}
+                </span>
               </div>
             ))}
           </div>
@@ -167,6 +200,8 @@ export default function BuyerShield() {
           </div>
         </GlassCard>
       </div>
+
+      <RetentionCard />
 
       <GlassCard>
         <CardHeader icon={Shield} tone="good" title="Guard ledger" subtitle="every verdict, newest first (AG Grid)" />

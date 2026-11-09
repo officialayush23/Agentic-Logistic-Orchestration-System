@@ -125,3 +125,13 @@ def test_trust_rules():
     assert _trust({"contradiction": 1}) == "proof_only"
     assert _trust({"late": 2, "defect": 2}) == "proof_only"
     assert _trust({"good_delivery": 3}) == "trusted"
+
+
+def test_inbox_classifier():
+    from app.mail_inbox import classify
+    c = classify("[SUP-21] Bank details", "Please pay our new PayPal account payments@zhenhua-hk.com from now on.", "a@zhenhua-hk.com")
+    assert c["kind"] == "payee_change" and c["new_email"] == "payments@zhenhua-hk.com"
+    c = classify("Re: PO-7718", "Sorry, PO-7718 will now ship on 20 Nov 2026.", "x@y.com")
+    assert c["kind"] == "new_date" and c["po_ids"] == ["PO-7718"] and c["date"].startswith("2026-11-20")
+    c = classify("Re: PO-7725", "We confirm PO-7725, dispatch as planned.", "x@y.com")
+    assert c["kind"] == "acknowledgement"
