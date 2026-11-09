@@ -18,6 +18,10 @@
 -- a shared database and still does exactly what the demo needs.
 --
 -- Order matters in a way TRUNCATE ... CASCADE hid: children before parents.
+-- children first: these reference purchase orders / components / incidents
+delete from goods_receipts;
+delete from warehouse_tasks;
+update incidents set source_po_id = null where source_po_id is not null;
 delete from supplier_memory;
 delete from approvals;
 delete from quotes;
