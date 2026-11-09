@@ -71,6 +71,7 @@ Fair price (should-cost / last paid / index de-escalation) · budget envelope pe
 | **AG Studio** | Payments finance dashboards |
 | **Bryntum** | Gantt (project timeline with order-by and payment milestones), Scheduler (supplier lanes), TaskBoard (incident board) |
 | **Render** | Docker web service for the API (`Dockerfile`, `render.yaml`); migrations and demo config apply on boot |
+| **Postman** | `postman/DisruptionOps.postman_collection.json` (23 requests in 6 folders: auth, agent team, Buyer Shield, PayPal money layer, proof, UI; login stores the bearer token) + `postman/openapi.json` |
 
 Also used: Mapbox GL (globe), Supabase Postgres (RLS multi-tenancy), Vercel (frontend).
 

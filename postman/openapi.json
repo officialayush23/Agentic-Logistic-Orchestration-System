@@ -1,0 +1,4257 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Supply Chain Disruption Control Agent",
+  "version": "0.1.0"
+ },
+ "paths": {
+  "/": {
+   "get": {
+    "summary": "Root",
+    "description": "Something truthful at the root.\n\nRender, uptime checks and anyone who pastes the base URL into a browser all\nhit `/`. A 404 there says \"this is broken\" about a service that is fine.",
+    "operationId": "root__get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/health": {
+   "get": {
+    "summary": "Plain Health",
+    "operationId": "plain_health_health_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/health": {
+   "get": {
+    "summary": "Health",
+    "operationId": "health_api_health_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/clock": {
+   "get": {
+    "summary": "Clock State",
+    "operationId": "clock_state_api_clock_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/clock/rate": {
+   "post": {
+    "summary": "Clock Rate",
+    "operationId": "clock_rate_api_clock_rate_post",
+    "parameters": [
+     {
+      "name": "seconds_per_sim_hour",
+      "in": "query",
+      "required": true,
+      "schema": {
+       "type": "number",
+       "title": "Seconds Per Sim Hour"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/scenarios": {
+   "get": {
+    "summary": "Scenarios",
+    "operationId": "scenarios_api_scenarios_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/scenarios/context": {
+   "get": {
+    "summary": "Scenario Context",
+    "description": "The world as it stands, in the words a person uses for it.\n\nThe scenario builder is generated from this. Nobody should ever have to type\nan ID: they pick \"PO-7712 \u2014 Motor Driver IC \u2014 1000 units from Zhen Hua\nElectronics\" and the ID travels underneath.\n\nEvery list carries the foreign keys the UI needs to make one dropdown narrow\nanother \u2014 choose a component and only that component's shipments remain.",
+    "operationId": "scenario_context_api_scenarios_context_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/scenarios/validate": {
+   "post": {
+    "summary": "Validate Scenario",
+    "description": "Say whether a scenario would run, and if not, exactly why.\n\nTwo passes. The first checks the shape against `EVENT_SCHEMA` \u2014 required\nfields, ranges, enum values. The second checks that every ID it names is a\nrow that actually exists, because `PO-9999` should fail here rather than\nforty seconds into a run in front of an audience.",
+    "operationId": "validate_scenario_api_scenarios_validate_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ValidateBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/scenarios/{scenario_id}": {
+   "get": {
+    "summary": "Scenario Detail",
+    "operationId": "scenario_detail_api_scenarios__scenario_id__get",
+    "parameters": [
+     {
+      "name": "scenario_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Scenario Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/signup": {
+   "post": {
+    "summary": "Auth Signup",
+    "operationId": "auth_signup_api_auth_signup_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SignupBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/login": {
+   "post": {
+    "summary": "Auth Login",
+    "operationId": "auth_login_api_auth_login_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/logout": {
+   "post": {
+    "summary": "Auth Logout",
+    "operationId": "auth_logout_api_auth_logout_post",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/me": {
+   "get": {
+    "summary": "Auth Me",
+    "description": "Who the caller is, and what they may do. The UI hangs its gating off this.",
+    "operationId": "auth_me_api_auth_me_get",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/scenarios/{scenario_id}/inject": {
+   "post": {
+    "summary": "Inject",
+    "description": "Start a scenario.\n\n`fresh=true` (the default) re-seeds the world first when a previous run has\nleft recovery stock in it. Pass `fresh=false` to deliberately layer one\nscenario on top of another's aftermath \u2014 a legitimate thing to want, but it\nhas to be asked for, because the silent version of it is indistinguishable\nfrom the agent failing.",
+    "operationId": "inject_api_scenarios__scenario_id__inject_post",
+    "parameters": [
+     {
+      "name": "scenario_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Scenario Id"
+      }
+     },
+     {
+      "name": "fresh",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": true,
+       "title": "Fresh"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/scenarios/custom": {
+   "post": {
+    "summary": "Add Custom Scenario",
+    "description": "Register a scenario written by whoever is testing this, and run it.\n\nIt goes into the same registry the built-ins live in, so it executes down the\nidentical code path \u2014 there is no separate \"custom\" mode that could behave\ndifferently from the one we demo. Custom scenarios are in-memory only and\ndisappear on restart, so nothing anyone types here can become a permanent\npart of the suite by accident.",
+    "operationId": "add_custom_scenario_api_scenarios_custom_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CustomScenario"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/scenarios/custom/{scenario_id}": {
+   "delete": {
+    "summary": "Remove Custom Scenario",
+    "operationId": "remove_custom_scenario_api_scenarios_custom__scenario_id__delete",
+    "parameters": [
+     {
+      "name": "scenario_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Scenario Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/events/custom": {
+   "post": {
+    "summary": "Custom Event",
+    "description": "Hand-craft a disruption from the dashboard. Same code path as scenarios.",
+    "operationId": "custom_event_api_events_custom_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CustomEvent"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/logs": {
+   "post": {
+    "summary": "Manual Log",
+    "description": "Type a note in the dashboard; it becomes a first-class audit event.",
+    "operationId": "manual_log_api_logs_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ManualLog"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/scenarios/reset": {
+   "post": {
+    "summary": "Reset",
+    "description": "Re-seed operational state.\n\nmode=demo (default) : operational tables only. Run history \u2014 scenario_runs,\n                      run_scores, audit_events \u2014 is PRESERVED, so you keep\n                      the comparisons you are tuning against.\nmode=hard           : also wipes history. Use between dev sessions, never\n                      mid-tuning and never on demo day.",
+    "operationId": "reset_api_scenarios_reset_post",
+    "parameters": [
+     {
+      "name": "mode",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "demo",
+       "title": "Mode"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/runs": {
+   "get": {
+    "summary": "Runs",
+    "operationId": "runs_api_runs_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/runs/{run_id}/score": {
+   "post": {
+    "summary": "Score",
+    "operationId": "score_api_runs__run_id__score_post",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/incidents": {
+   "get": {
+    "summary": "Incidents",
+    "description": "Incidents belonging to the run the dashboard is scoped to.\n\nUnscoped, this endpoint is how the header could read \"No test run\" while the\npage underneath it rendered INC-1002 in full: `/api/now` obeyed the run\ncontract and this did not. An incident is evidence about a run; with no run\nthere is no evidence.",
+    "operationId": "incidents_api_incidents_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/runs/active": {
+   "get": {
+    "summary": "Active Run",
+    "description": "What the UI is looking at. The answer is allowed to be nothing.",
+    "operationId": "active_run_api_runs_active_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/evaluation/current": {
+   "get": {
+    "summary": "Current Evaluation",
+    "description": "The active run, judged against explicit criteria. May be nothing.",
+    "operationId": "current_evaluation_api_evaluation_current_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/evaluation/{run_id}": {
+   "post": {
+    "summary": "Evaluate Run",
+    "description": "Re-judge a specific run from its own artefacts.",
+    "operationId": "evaluate_run_api_evaluation__run_id__post",
+    "parameters": [
+     {
+      "name": "run_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Run Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/world/explain": {
+   "get": {
+    "summary": "Explain World",
+    "description": "What a test will run against \u2014 including which options are traps.\n\nA tester who cannot see which suppliers are cheap-and-refusable cannot tell\nwhether the agent avoided them deliberately or by luck.",
+    "operationId": "explain_world_api_world_explain_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/system/hard-reset": {
+   "post": {
+    "summary": "Hard Reset",
+    "description": "Delete every runtime artefact. Keep the static baseline.\n\nAfter this returns, there is no run, no incident, no decision, no log, no\nscore. The suppliers, components, plants and policies survive \u2014 those are\nthe world, not evidence about it.\n\nThe frontend must also clear its cache; a clean backend behind a stale React\ncache still shows ghosts.",
+    "operationId": "hard_reset_api_system_hard_reset_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/audit": {
+   "get": {
+    "summary": "Audit",
+    "description": "The log for the world that exists now, unless you ask for everything.\n\n`since_reset=true` (the default) returns only events after the most recent\nWORLD_RESET. The full history is still there \u2014 pass `since_reset=false` to\nread it \u2014 but a dashboard showing a reset run's events beside a freshly\nseeded world is worse than showing nothing.",
+    "operationId": "audit_api_audit_get",
+    "parameters": [
+     {
+      "name": "incident_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Incident Id"
+      }
+     },
+     {
+      "name": "run_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Run Id"
+      }
+     },
+     {
+      "name": "after",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 0,
+       "title": "After"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 300,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "since_reset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": true,
+       "title": "Since Reset"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/world": {
+   "get": {
+    "summary": "World",
+    "description": "Everything the dashboard needs for the operational panes, in one call.",
+    "operationId": "world_api_world_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/solve/{production_order_id}": {
+   "get": {
+    "summary": "Solve Endpoint",
+    "description": "Run the deterministic solver. No LLM anywhere on this path.\n\n`record=true` writes the reasoning to the audit log.\n`exclude=SUP-21,SUP-64` drops those suppliers from the candidate pool before\nanything is scored \u2014 this is the what-if. A simulation never records.",
+    "operationId": "solve_endpoint_api_solve__production_order_id__get",
+    "parameters": [
+     {
+      "name": "production_order_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Production Order Id"
+      }
+     },
+     {
+      "name": "record",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Record"
+      }
+     },
+     {
+      "name": "exclude",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "",
+       "title": "Exclude"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/production/reschedule": {
+   "post": {
+    "summary": "Reschedule Production",
+    "description": "Stand a production run down so its allocated units can go elsewhere.\n\nThis is the one lever that costs no money and still needs a human every\ntime: the delay lands on another customer's order. The agent may propose\nit; only an operator commits it.",
+    "operationId": "reschedule_production_api_production_reschedule_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RescheduleBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/kpis": {
+   "get": {
+    "summary": "Kpis",
+    "description": "Headline numbers for the overview strip.",
+    "operationId": "kpis_api_kpis_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/network": {
+   "get": {
+    "summary": "Network",
+    "description": "Supplier -> plant graph for the flow view. Geography, not a map engine.",
+    "operationId": "network_api_network_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agent/state": {
+   "get": {
+    "summary": "Agent State",
+    "operationId": "agent_state_api_agent_state_get",
+    "parameters": [
+     {
+      "name": "incident_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Incident Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agent/steps/{incident_id}": {
+   "get": {
+    "summary": "Agent Steps",
+    "operationId": "agent_steps_api_agent_steps__incident_id__get",
+    "parameters": [
+     {
+      "name": "incident_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Incident Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agent/resume/{incident_id}": {
+   "post": {
+    "summary": "Agent Resume",
+    "operationId": "agent_resume_api_agent_resume__incident_id__post",
+    "parameters": [
+     {
+      "name": "incident_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Incident Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ResumeBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agent/verify/{incident_id}": {
+   "post": {
+    "summary": "Agent Verify",
+    "operationId": "agent_verify_api_agent_verify__incident_id__post",
+    "parameters": [
+     {
+      "name": "incident_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Incident Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/settings/llm": {
+   "get": {
+    "summary": "Llm Settings Get",
+    "description": "What is configured. Never the key \u2014 there is no endpoint that returns it.",
+    "operationId": "llm_settings_get_api_settings_llm_get",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "summary": "Llm Settings Put",
+    "description": "Owner only. A model key is a billable credential and changing the model\nchanges what the agent is, so this is not an operator-level action.",
+    "operationId": "llm_settings_put_api_settings_llm_put",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LlmKeyBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "Llm Settings Delete",
+    "operationId": "llm_settings_delete_api_settings_llm_delete",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/settings/llm/test": {
+   "post": {
+    "summary": "Llm Settings Test",
+    "description": "Prove it works. \"Saved\" and \"works\" are different claims.",
+    "operationId": "llm_settings_test_api_settings_llm_test_post",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/triage": {
+   "get": {
+    "summary": "Triage Queue",
+    "description": "Which problem the agent works next, and the rule that decided it.\n\nA ranking nobody can read is a black box, so the rule ships with the queue\nrather than living in a docstring. Every row carries its position *and* the\ncomparison that put it there, said against the row above it \u2014 \"9h more\nheadroom than INC-002\" is checkable in a way that \"rank 3\" is not.",
+    "operationId": "triage_queue_api_triage_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/routes": {
+   "get": {
+    "summary": "Routes",
+    "description": "Every lane the solver looked at, with its verdict and its geography.\n\nThe map has always drawn shipments. Shipments are the least interesting\nthing here: they are what survived. What the agent actually did was consider\na dozen lanes and refuse most of them, and that refusal has coordinates \u2014\na Shenzhen supplier reachable by sea but prohibited by air is two lines of\nopposite colour between the same two points.\n\nThe human_reason on a rejected lane is the *same string* the Decision\nExplorer prints. That is not tidiness: a judge who reads the map and then\nthe explorer must not find two explanations of one refusal, and the way to\nguarantee that is to have one sentence with one author \u2014 `_hard_filter`.\n\nA lane with no coordinates is omitted and counted, never silently dropped:\na map that quietly loses a supplier is worse than one that says it did.",
+    "operationId": "routes_api_routes_get",
+    "parameters": [
+     {
+      "name": "production_order_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Production Order Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/budget": {
+   "get": {
+    "summary": "Budget",
+    "description": "The emergency budget as its three terms, plus who is holding what.\n\nOne number \u2014 \"Rs 1,80,000 remaining\" \u2014 cannot be argued with, which is\nexactly the problem: an operator who sees a refusal has no way to tell a\nreal constraint from a stale reservation. Total, placed, held, and the\nincidents doing the holding, so the ceiling is checkable rather than\nasserted.",
+    "operationId": "budget_api_budget_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/recovery": {
+   "get": {
+    "summary": "Recovery",
+    "description": "The recovery plan, and how much of it has actually happened.\n\nA plan that only exists as a row is a proposal. What makes it a *recovery* is\nthe trail behind it: an approval crossed or not needed, purchase orders\nraised, suppliers who confirmed, stock that moved, a line that is covered\nagain. Until now that trail was scattered across five tables and four tabs,\nwhich meant the single most important artefact the agent produces had nowhere\nto be looked at whole.\n\nProgress is derived, never stored. Every milestone below is a fact already\nwritten by the path that did the work \u2014 nothing here can report a step as\ndone that did not happen, because nothing here writes anything.",
+    "operationId": "recovery_api_recovery_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agent/ask": {
+   "post": {
+    "summary": "Agent Ask",
+    "description": "Conversational agent. Reads deterministic state; never mutates it.",
+    "operationId": "agent_ask_api_agent_ask_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AskBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agent/command": {
+   "post": {
+    "summary": "Agent Command",
+    "description": "Tell the agent what to do.\n\nThe second entry point into the one agent \u2014 `/api/agent/ask` reads and never\nwrites, this acts. Every reply has the same shape (status, plan, blockers,\nalternatives, actions_taken) so the UI never has to guess whether anything\nhappened. See command.py for why there is deliberately no second agent\nbehind this.",
+    "operationId": "agent_command_api_agent_command_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CommandBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/llm/health": {
+   "get": {
+    "summary": "Llm Health",
+    "operationId": "llm_health_api_llm_health_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/llm/diagnose": {
+   "get": {
+    "summary": "Llm Diagnose",
+    "description": "Why is the model unavailable? Try every provider and say what each did.\n\n\"Deterministic only\" is a symptom shared by a missing key, a revoked key, a\nmodel name that no longer exists and blocked egress \u2014 and the four fixes are\nentirely different. This answers which one it is.",
+    "operationId": "llm_diagnose_api_llm_diagnose_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/threads": {
+   "get": {
+    "summary": "Threads",
+    "operationId": "threads_api_threads_get",
+    "parameters": [
+     {
+      "name": "incident_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Incident Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/threads/message": {
+   "post": {
+    "summary": "Human Message",
+    "operationId": "human_message_api_threads_message_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HumanMessage"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/warehouse": {
+   "get": {
+    "summary": "Warehouse",
+    "operationId": "warehouse_api_warehouse_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/warehouse/tasks/{task_id}/complete": {
+   "post": {
+    "summary": "Complete Task",
+    "operationId": "complete_task_api_warehouse_tasks__task_id__complete_post",
+    "parameters": [
+     {
+      "name": "task_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Task Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TaskResult"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/warehouse/receive": {
+   "post": {
+    "summary": "Receive Shipment",
+    "description": "Received is not usable. This is the quality gate.",
+    "operationId": "receive_shipment_api_warehouse_receive_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReceiptBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/approvals": {
+   "get": {
+    "summary": "Approvals",
+    "operationId": "approvals_api_approvals_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/approvals/{approval_id}/decide": {
+   "post": {
+    "summary": "Decide Approval",
+    "description": "Actually decide an approval, and resume the agent.\n\nThe Decision Explorer previously had an Approve button that only navigated to\nthe approvals screen. Pressing it looked like approving and changed nothing \u2014\nwhich is the worst possible behaviour for the one control that exists to stop\nthe agent spending money.",
+    "operationId": "decide_approval_api_approvals__approval_id__decide_post",
+    "parameters": [
+     {
+      "name": "approval_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Approval Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ApproveBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/suppliers/{supplier_id}/reliability": {
+   "get": {
+    "summary": "Supplier Reliability",
+    "description": "Trust, and the record that produced it.\n\nThe number on its own is an opinion. With the events behind it, it is an\nargument the operator can check \u2014 and disagree with.",
+    "operationId": "supplier_reliability_api_suppliers__supplier_id__reliability_get",
+    "parameters": [
+     {
+      "name": "supplier_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Supplier Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/accuracy": {
+   "get": {
+    "summary": "Accuracy",
+    "description": "How often is the agent actually right?\n\nEvery number here is checkable against the audit log, and each one is a\n*verified* outcome rather than a self-report:\n\n  constraint_compliance \u2014 recovery orders raised, versus how many of them\n    violated a hard rule. Any violation is a failure, however cheap.\n  claim_verification    \u2014 supplier claims that contradicted carrier tracking,\n    and how many the agent caught rather than believed.\n  delivery_accuracy     \u2014 did the stock the agent bought actually turn up\n    usable, in the quantity it planned for.\n  escalation_precision  \u2014 of the things it stopped and asked about, how many\n    genuinely crossed its authority. Stopping unnecessarily wastes a human;\n    not stopping is worse.\n  interpretation        \u2014 supplier replies read into structured facts, versus\n    replies it correctly refused to guess at.",
+    "operationId": "accuracy_api_accuracy_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/now": {
+   "get": {
+    "summary": "Now State",
+    "description": "One answer to \"what is happening right now?\"\n\nDeliberately small and deliberately ranked: an operator glancing at a strip\nat the top of the screen has room for a handful of facts, and the ones that\nmatter are the ones that need them.",
+    "operationId": "now_state_api_now_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/context": {
+   "get": {
+    "summary": "Business Context",
+    "description": "Who we are, what we build, what is at risk. Names, not IDs.",
+    "operationId": "business_context_api_context_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/suppliers": {
+   "get": {
+    "summary": "Supplier Directory",
+    "operationId": "supplier_directory_api_suppliers_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/supplier/{supplier_id}": {
+   "get": {
+    "summary": "Supplier View",
+    "operationId": "supplier_view_api_supplier__supplier_id__get",
+    "parameters": [
+     {
+      "name": "supplier_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Supplier Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/supplier/{supplier_id}/presence": {
+   "post": {
+    "summary": "Supplier Presence",
+    "description": "Heartbeat from an open supplier portal.\n\nWhile this is warm the scripted persona for that supplier stands down and\nthe agent genuinely waits for a person. Let it go cold and the personas\nresume, so an unattended demo still runs end to end.",
+    "operationId": "supplier_presence_api_supplier__supplier_id__presence_post",
+    "parameters": [
+     {
+      "name": "supplier_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Supplier Id"
+      }
+     },
+     {
+      "name": "leaving",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Leaving"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/supplier/{supplier_id}/reply": {
+   "post": {
+    "summary": "Supplier Reply",
+    "operationId": "supplier_reply_api_supplier__supplier_id__reply_post",
+    "parameters": [
+     {
+      "name": "supplier_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Supplier Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SupplierReply"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/supplier/{supplier_id}/claim": {
+   "post": {
+    "summary": "Supplier Claim",
+    "description": "Let a person tell the lie. Catching a script proves nothing.",
+    "operationId": "supplier_claim_api_supplier__supplier_id__claim_post",
+    "parameters": [
+     {
+      "name": "supplier_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Supplier Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SupplierClaim"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/threads/{thread_id}/autonomy": {
+   "post": {
+    "summary": "Thread Autonomy",
+    "operationId": "thread_autonomy_api_threads__thread_id__autonomy_post",
+    "parameters": [
+     {
+      "name": "thread_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Thread Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AutonomyBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/threads/messages/{message_id}/send": {
+   "post": {
+    "summary": "Send Draft",
+    "operationId": "send_draft_api_threads_messages__message_id__send_post",
+    "parameters": [
+     {
+      "name": "message_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Message Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SendDraftBody"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/human-input": {
+   "get": {
+    "summary": "Human Input",
+    "description": "Questions the agent declined to answer, and what it did with the answers.\n\nDistinct from approvals on purpose. An approval is a decision the agent\nalready made and may not execute. This is a decision it refused to make\nbecause the evidence would not carry it \u2014 which is the more interesting\nbehaviour and, until now, the one nothing on screen rendered.",
+    "operationId": "human_input_api_human_input_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/human-input/{request_id}/resolve": {
+   "post": {
+    "summary": "Resolve Human Input",
+    "operationId": "resolve_human_input_api_human_input__request_id__resolve_post",
+    "parameters": [
+     {
+      "name": "request_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Request Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ResolveInput"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/intelligence": {
+   "get": {
+    "summary": "Decision Intelligence",
+    "description": "Evidence \u2192 conclusion \u2192 action \u2192 why \u2192 confidence.\n\nThe Decision Explorer is a comparison, which is what a procurement analyst\nwants. This is the brief, which is what the person who has to sign wants.\nSame rows underneath; different question.",
+    "operationId": "decision_intelligence_api_intelligence_get",
+    "parameters": [
+     {
+      "name": "incident_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Incident Id"
+      }
+     },
+     {
+      "name": "production_order_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Production Order Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/world/suppliers": {
+   "post": {
+    "summary": "Create Test Supplier",
+    "description": "Let somebody build their own trap without editing our seed file.\n\n\"The cheapest supplier has no AEC-Q100\" is a test a judge should be able to\nconstruct in thirty seconds. Anything created here is flagged `origin=test`\nand does not survive a reset, so one person's experiment cannot corrupt the\nnext person's run.",
+    "operationId": "create_test_supplier_api_world_suppliers_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NewSupplier"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/world/suppliers/{supplier_id}": {
+   "delete": {
+    "summary": "Delete Test Supplier",
+    "operationId": "delete_test_supplier_api_world_suppliers__supplier_id__delete",
+    "parameters": [
+     {
+      "name": "supplier_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Supplier Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/finance/summary": {
+   "get": {
+    "summary": "Finance Summary",
+    "operationId": "finance_summary_api_finance_summary_get",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/finance/mandate/start": {
+   "post": {
+    "summary": "Mandate Start",
+    "operationId": "mandate_start_api_finance_mandate_start_post",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/finance/mandate/complete": {
+   "post": {
+    "summary": "Mandate Complete",
+    "operationId": "mandate_complete_api_finance_mandate_complete_post",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MandateComplete"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/finance/payments": {
+   "get": {
+    "summary": "Finance Payments",
+    "operationId": "finance_payments_api_finance_payments_get",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/finance/approvals": {
+   "get": {
+    "summary": "Finance Approvals",
+    "operationId": "finance_approvals_api_finance_approvals_get",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/finance/approvals/{approval_id}/decide": {
+   "post": {
+    "summary": "Finance Decide",
+    "operationId": "finance_decide_api_finance_approvals__approval_id__decide_post",
+    "parameters": [
+     {
+      "name": "approval_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer",
+       "title": "Approval Id"
+      }
+     },
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ReleaseDecision"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/webhooks/paypal": {
+   "post": {
+    "summary": "Paypal Webhook",
+    "description": "PayPal \u2192 us. Verified with PayPal's signature API, stored idempotently.",
+    "operationId": "paypal_webhook_api_webhooks_paypal_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/ui/snapshot": {
+   "get": {
+    "summary": "Ui Snapshot Endpoint",
+    "description": "Everything the dashboard draws, in the exact shape the UI renders.",
+    "operationId": "ui_snapshot_endpoint_api_ui_snapshot_get",
+    "parameters": [
+     {
+      "name": "authorization",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Authorization"
+      }
+     },
+     {
+      "name": "x-portal-token",
+      "in": "header",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Portal-Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agents": {
+   "get": {
+    "summary": "Agents Overview",
+    "description": "The team, the graph (Mermaid) and where its memory lives.",
+    "operationId": "agents_overview_api_agents_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agents/threads/{thread_id}": {
+   "get": {
+    "summary": "Agent Thread",
+    "operationId": "agent_thread_api_agents_threads__thread_id__get",
+    "parameters": [
+     {
+      "name": "thread_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Thread Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agents/threads/{thread_id}/history": {
+   "get": {
+    "summary": "Agent Thread History",
+    "operationId": "agent_thread_history_api_agents_threads__thread_id__history_get",
+    "parameters": [
+     {
+      "name": "thread_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Thread Id"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agents/patrol": {
+   "post": {
+    "summary": "Agent Patrol",
+    "operationId": "agent_patrol_api_agents_patrol_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/agents/payee-change": {
+   "post": {
+    "summary": "Agent Payee Change",
+    "operationId": "agent_payee_change_api_agents_payee_change_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PayeeChangeBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/copilot": {
+   "post": {
+    "summary": "Copilot Ask",
+    "operationId": "copilot_ask_api_copilot_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CopilotBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/shield": {
+   "get": {
+    "summary": "Buyer Shield",
+    "operationId": "buyer_shield_api_shield_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/shield/quote": {
+   "post": {
+    "summary": "Shield Quote",
+    "description": "Fair-price guard on an inbound quote (e.g. a broker offer) before any PO or hold exists.",
+    "operationId": "shield_quote_api_shield_quote_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/QuoteBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/shield/hold/{po_id}": {
+   "post": {
+    "summary": "Shield Hold",
+    "description": "Place the PayPal hold for an existing PO through the guards (fair price, budget, authority).",
+    "operationId": "shield_hold_api_shield_hold__po_id__post",
+    "parameters": [
+     {
+      "name": "po_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Po Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/shield/retention/{po_id}": {
+   "post": {
+    "summary": "Shield Retention",
+    "operationId": "shield_retention_api_shield_retention__po_id__post",
+    "parameters": [
+     {
+      "name": "po_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Po Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "ApproveBody": {
+    "properties": {
+     "decision": {
+      "type": "string",
+      "title": "Decision",
+      "default": "approve"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "decided_by": {
+      "type": "string",
+      "title": "Decided By",
+      "default": "operator"
+     }
+    },
+    "type": "object",
+    "title": "ApproveBody"
+   },
+   "AskBody": {
+    "properties": {
+     "question": {
+      "type": "string",
+      "title": "Question"
+     },
+     "incident_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Incident Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "question"
+    ],
+    "title": "AskBody"
+   },
+   "AutonomyBody": {
+    "properties": {
+     "mode": {
+      "type": "string",
+      "title": "Mode"
+     },
+     "by": {
+      "type": "string",
+      "title": "By",
+      "default": "operator"
+     }
+    },
+    "type": "object",
+    "required": [
+     "mode"
+    ],
+    "title": "AutonomyBody"
+   },
+   "CommandBody": {
+    "properties": {
+     "instruction": {
+      "type": "string",
+      "title": "Instruction",
+      "default": ""
+     },
+     "actor": {
+      "type": "string",
+      "title": "Actor",
+      "default": "operator"
+     },
+     "choose": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Choose"
+     },
+     "incident_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Incident Id"
+     }
+    },
+    "type": "object",
+    "title": "CommandBody"
+   },
+   "CopilotBody": {
+    "properties": {
+     "question": {
+      "type": "string",
+      "title": "Question"
+     }
+    },
+    "type": "object",
+    "required": [
+     "question"
+    ],
+    "title": "CopilotBody"
+   },
+   "CustomEvent": {
+    "properties": {
+     "type": {
+      "type": "string",
+      "title": "Type"
+     },
+     "params": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Params",
+      "default": {}
+     },
+     "incident_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Incident Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "type"
+    ],
+    "title": "CustomEvent"
+   },
+   "CustomScenario": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "events": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Events"
+     },
+     "tests": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tests"
+     },
+     "run": {
+      "type": "boolean",
+      "title": "Run",
+      "default": true
+     },
+     "world": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "World"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name",
+     "events"
+    ],
+    "title": "CustomScenario"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "type": "array",
+      "title": "Detail"
+     }
+    },
+    "type": "object",
+    "title": "HTTPValidationError"
+   },
+   "HumanMessage": {
+    "properties": {
+     "thread_id": {
+      "type": "integer",
+      "title": "Thread Id"
+     },
+     "body": {
+      "type": "string",
+      "title": "Body"
+     },
+     "incident_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Incident Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "thread_id",
+     "body"
+    ],
+    "title": "HumanMessage"
+   },
+   "LlmKeyBody": {
+    "properties": {
+     "provider": {
+      "type": "string",
+      "title": "Provider"
+     },
+     "api_key": {
+      "type": "string",
+      "title": "Api Key"
+     },
+     "model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model"
+     },
+     "base_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Base Url"
+     }
+    },
+    "type": "object",
+    "required": [
+     "provider",
+     "api_key"
+    ],
+    "title": "LlmKeyBody"
+   },
+   "LoginBody": {
+    "properties": {
+     "email": {
+      "type": "string",
+      "title": "Email"
+     },
+     "password": {
+      "type": "string",
+      "title": "Password"
+     }
+    },
+    "type": "object",
+    "required": [
+     "email",
+     "password"
+    ],
+    "title": "LoginBody"
+   },
+   "MandateComplete": {
+    "properties": {
+     "approval_token_id": {
+      "type": "string",
+      "title": "Approval Token Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "approval_token_id"
+    ],
+    "title": "MandateComplete"
+   },
+   "ManualLog": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "title": "Text"
+     },
+     "incident_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Incident Id"
+     },
+     "actor": {
+      "type": "string",
+      "title": "Actor",
+      "default": "human"
+     }
+    },
+    "type": "object",
+    "required": [
+     "text"
+    ],
+    "title": "ManualLog",
+    "description": "Free-text note typed into the dashboard. Lands in the same audit stream."
+   },
+   "NewSupplier": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "component_id": {
+      "type": "string",
+      "title": "Component Id"
+     },
+     "unit_price": {
+      "type": "number",
+      "title": "Unit Price"
+     },
+     "lead_time_days": {
+      "type": "integer",
+      "title": "Lead Time Days",
+      "default": 3
+     },
+     "available_quantity": {
+      "type": "integer",
+      "title": "Available Quantity",
+      "default": 500
+     },
+     "min_order_quantity": {
+      "type": "integer",
+      "title": "Min Order Quantity",
+      "default": 1
+     },
+     "quality_score": {
+      "type": "number",
+      "title": "Quality Score",
+      "default": 0.9
+     },
+     "reliability_score": {
+      "type": "number",
+      "title": "Reliability Score",
+      "default": 0.8
+     },
+     "certifications": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Certifications",
+      "default": []
+     },
+     "city": {
+      "type": "string",
+      "title": "City",
+      "default": "Pune"
+     },
+     "country": {
+      "type": "string",
+      "title": "Country",
+      "default": "India"
+     },
+     "mode": {
+      "type": "string",
+      "title": "Mode",
+      "default": "ROAD"
+     },
+     "transit_days": {
+      "type": "integer",
+      "title": "Transit Days",
+      "default": 2
+     },
+     "freight_cost": {
+      "type": "number",
+      "title": "Freight Cost",
+      "default": 2000
+     }
+    },
+    "type": "object",
+    "required": [
+     "name",
+     "component_id",
+     "unit_price"
+    ],
+    "title": "NewSupplier"
+   },
+   "PayeeChangeBody": {
+    "properties": {
+     "supplier_id": {
+      "type": "string",
+      "title": "Supplier Id"
+     },
+     "new_email": {
+      "type": "string",
+      "title": "New Email"
+     },
+     "sender": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sender"
+     }
+    },
+    "type": "object",
+    "required": [
+     "supplier_id",
+     "new_email"
+    ],
+    "title": "PayeeChangeBody"
+   },
+   "QuoteBody": {
+    "properties": {
+     "component_id": {
+      "type": "string",
+      "title": "Component Id"
+     },
+     "supplier_id": {
+      "type": "string",
+      "title": "Supplier Id"
+     },
+     "unit_price_inr": {
+      "type": "number",
+      "title": "Unit Price Inr"
+     },
+     "quantity": {
+      "type": "integer",
+      "title": "Quantity"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     }
+    },
+    "type": "object",
+    "required": [
+     "component_id",
+     "supplier_id",
+     "unit_price_inr",
+     "quantity"
+    ],
+    "title": "QuoteBody"
+   },
+   "ReceiptBody": {
+    "properties": {
+     "po_id": {
+      "type": "string",
+      "title": "Po Id"
+     },
+     "quantity_received": {
+      "type": "integer",
+      "title": "Quantity Received"
+     },
+     "quantity_approved": {
+      "type": "integer",
+      "title": "Quantity Approved"
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     },
+     "invoice_number": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Invoice Number"
+     }
+    },
+    "type": "object",
+    "required": [
+     "po_id",
+     "quantity_received",
+     "quantity_approved"
+    ],
+    "title": "ReceiptBody"
+   },
+   "ReleaseDecision": {
+    "properties": {
+     "decision": {
+      "type": "string",
+      "title": "Decision"
+     },
+     "code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Code"
+     }
+    },
+    "type": "object",
+    "required": [
+     "decision"
+    ],
+    "title": "ReleaseDecision"
+   },
+   "RescheduleBody": {
+    "properties": {
+     "production_order_id": {
+      "type": "string",
+      "title": "Production Order Id"
+     },
+     "delay_days": {
+      "type": "integer",
+      "title": "Delay Days",
+      "default": 7
+     },
+     "reason": {
+      "type": "string",
+      "title": "Reason",
+      "default": ""
+     },
+     "incident_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Incident Id"
+     },
+     "approved_by": {
+      "type": "string",
+      "title": "Approved By",
+      "default": "operator"
+     }
+    },
+    "type": "object",
+    "required": [
+     "production_order_id"
+    ],
+    "title": "RescheduleBody"
+   },
+   "ResolveInput": {
+    "properties": {
+     "choice": {
+      "type": "string",
+      "title": "Choice"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "decided_by": {
+      "type": "string",
+      "title": "Decided By",
+      "default": "operator"
+     }
+    },
+    "type": "object",
+    "required": [
+     "choice"
+    ],
+    "title": "ResolveInput"
+   },
+   "ResumeBody": {
+    "properties": {
+     "decision": {
+      "type": "string",
+      "title": "Decision"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "exclude": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Exclude",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "decision"
+    ],
+    "title": "ResumeBody"
+   },
+   "SendDraftBody": {
+    "properties": {
+     "body": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Body"
+     },
+     "sent_by": {
+      "type": "string",
+      "title": "Sent By",
+      "default": "operator"
+     }
+    },
+    "type": "object",
+    "title": "SendDraftBody"
+   },
+   "SignupBody": {
+    "properties": {
+     "org_id": {
+      "type": "string",
+      "title": "Org Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "email": {
+      "type": "string",
+      "title": "Email"
+     },
+     "password": {
+      "type": "string",
+      "title": "Password"
+     },
+     "full_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Full Name"
+     },
+     "industry": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Industry"
+     },
+     "city": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "City"
+     },
+     "country": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Country"
+     }
+    },
+    "type": "object",
+    "required": [
+     "org_id",
+     "name",
+     "email",
+     "password"
+    ],
+    "title": "SignupBody"
+   },
+   "SupplierClaim": {
+    "properties": {
+     "po_id": {
+      "type": "string",
+      "title": "Po Id"
+     },
+     "claim": {
+      "type": "string",
+      "title": "Claim",
+      "default": "dispatched"
+     },
+     "note": {
+      "type": "string",
+      "title": "Note",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "po_id"
+    ],
+    "title": "SupplierClaim"
+   },
+   "SupplierOffer": {
+    "properties": {
+     "component_id": {
+      "type": "string",
+      "title": "Component Id"
+     },
+     "quantity": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Quantity"
+     },
+     "unit_price": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unit Price"
+     },
+     "lead_time_days": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Lead Time Days"
+     },
+     "mode": {
+      "type": "string",
+      "title": "Mode",
+      "default": "ROAD"
+     },
+     "min_order_quantity": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Min Order Quantity"
+     },
+     "certifications": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Certifications",
+      "default": []
+     },
+     "expedite_available": {
+      "type": "boolean",
+      "title": "Expedite Available",
+      "default": false
+     },
+     "expedite_fee": {
+      "type": "number",
+      "title": "Expedite Fee",
+      "default": 0
+     },
+     "freight_cost": {
+      "type": "number",
+      "title": "Freight Cost",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "component_id"
+    ],
+    "title": "SupplierOffer"
+   },
+   "SupplierReply": {
+    "properties": {
+     "kind": {
+      "type": "string",
+      "title": "Kind",
+      "default": "freeform"
+     },
+     "thread_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Thread Id"
+     },
+     "body": {
+      "type": "string",
+      "title": "Body",
+      "default": ""
+     },
+     "note": {
+      "type": "string",
+      "title": "Note",
+      "default": ""
+     },
+     "offer": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SupplierOffer"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object",
+    "title": "SupplierReply"
+   },
+   "TaskResult": {
+    "properties": {
+     "usable_stock": {
+      "type": "integer",
+      "title": "Usable Stock"
+     },
+     "quarantined_stock": {
+      "type": "integer",
+      "title": "Quarantined Stock",
+      "default": 0
+     },
+     "reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Reason"
+     }
+    },
+    "type": "object",
+    "required": [
+     "usable_stock"
+    ],
+    "title": "TaskResult"
+   },
+   "ValidateBody": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "default": "Untitled"
+     },
+     "events": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Events",
+      "default": []
+     }
+    },
+    "type": "object",
+    "title": "ValidateBody"
+   },
+   "ValidationError": {
+    "properties": {
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Location"
+     },
+     "msg": {
+      "type": "string",
+      "title": "Message"
+     },
+     "type": {
+      "type": "string",
+      "title": "Error Type"
+     }
+    },
+    "type": "object",
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError"
+   }
+  }
+ }
+}

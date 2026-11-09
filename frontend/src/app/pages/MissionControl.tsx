@@ -7,6 +7,7 @@ import { FeedList } from '../ui/Feed'
 import { CardHeader, GlassCard, Meter, Pill, SectionTitle, tones } from '../ui/glass'
 import type { Tone } from '../data/types'
 import { KpiRow } from '../ui/Kpi'
+import { live as liveData } from '../data/live'
 import { AreaGradient, axis, grid, GlassTooltip } from '../viz/chartKit'
 import { SupplyGlobe } from '../viz/SupplyGlobe'
 
@@ -28,7 +29,7 @@ export default function MissionControl() {
       <KpiRow items={[
         { label: 'Units at risk', value: num(t.unitsAtRisk), icon: AlertTriangle, tone: 'crit', delta: -18.4, invert: true },
         { label: 'Funds held in PayPal', value: usd(t.held), icon: Lock, tone: 'azure', delta: 17.9, note: 'reserved, not moved' },
-        { label: 'Recovered from bad suppliers', value: usd(t.recovered), icon: Undo2, tone: 'good', delta: 117.5 },
+        { label: 'Protected by Buyer Shield', value: usd(liveData.mode === 'live' && liveData.shield.total_usd > 0 ? liveData.shield.total_usd : 25438), icon: Undo2, tone: 'good', delta: 117.5, note: '7 guards · blocked, voided, deducted' },
         { label: 'Open incidents', value: String(t.openIncidents), icon: Activity, tone: 'violet', delta: 25, invert: true },
       ]} />
 

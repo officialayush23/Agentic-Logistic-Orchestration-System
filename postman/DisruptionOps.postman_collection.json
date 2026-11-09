@@ -1,0 +1,714 @@
+{
+ "info": {
+  "name": "DisruptionOps \u00b7 PayPal agentic commerce API",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+  "description": "Multi-agent (LangGraph) buyer-side agent team with a PayPal sandbox money layer and seven Buyer Shield guards. Run '1 \u00b7 Auth / login' first; the token is stored automatically."
+ },
+ "auth": {
+  "type": "bearer",
+  "bearer": [
+   {
+    "key": "token",
+    "value": "{{token}}",
+    "type": "string"
+   }
+  ]
+ },
+ "variable": [
+  {
+   "key": "base",
+   "value": "https://agentic-logistic-orchestration-system.onrender.com"
+  },
+  {
+   "key": "token",
+   "value": ""
+  }
+ ],
+ "item": [
+  {
+   "name": "1 \u00b7 Auth",
+   "item": [
+    {
+     "name": "GET /api/health",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/health",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "health"
+       ],
+       "variable": []
+      },
+      "description": "Health"
+     }
+    },
+    {
+     "name": "POST /api/auth/login",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/auth/login",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "auth",
+        "login"
+       ],
+       "variable": []
+      },
+      "description": "Auth Login",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"demo@disruptionops.io\",\n  \"password\": \"DemoPass123!\"\n}"
+      }
+     },
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "const j = pm.response.json();",
+         "pm.collectionVariables.set('token', j.token || j.access_token);"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "2 \u00b7 Agent team (LangGraph)",
+   "item": [
+    {
+     "name": "POST /api/agent/resume/{incident_id}",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/agent/resume/:incident_id",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "agent",
+        "resume",
+        ":incident_id"
+       ],
+       "variable": [
+        {
+         "key": "incident_id",
+         "value": "INC-301"
+        }
+       ]
+      },
+      "description": "Agent Resume",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"decision\": \"\",\n  \"note\": \"\",\n  \"exclude\": []\n}"
+      }
+     }
+    },
+    {
+     "name": "GET /api/agents",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/agents",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "agents"
+       ],
+       "variable": []
+      },
+      "description": "Agents Overview\n\nThe team, the graph (Mermaid) and where its memory lives."
+     }
+    },
+    {
+     "name": "GET /api/agents/threads/{thread_id}",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/agents/threads/:thread_id",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "agents",
+        "threads",
+        ":thread_id"
+       ],
+       "variable": [
+        {
+         "key": "thread_id",
+         "value": "INC-301"
+        }
+       ]
+      },
+      "description": "Agent Thread"
+     }
+    },
+    {
+     "name": "GET /api/agents/threads/{thread_id}/history",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/agents/threads/:thread_id/history",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "agents",
+        "threads",
+        ":thread_id",
+        "history"
+       ],
+       "variable": [
+        {
+         "key": "thread_id",
+         "value": "INC-301"
+        }
+       ]
+      },
+      "description": "Agent Thread History"
+     }
+    },
+    {
+     "name": "POST /api/agents/patrol",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/agents/patrol",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "agents",
+        "patrol"
+       ],
+       "variable": []
+      },
+      "description": "Agent Patrol"
+     }
+    },
+    {
+     "name": "POST /api/agents/payee-change",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/agents/payee-change",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "agents",
+        "payee-change"
+       ],
+       "variable": []
+      },
+      "description": "Agent Payee Change",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"supplier_id\": \"SUP-21\",\n  \"new_email\": \"payments@zhenhua-hk.com\",\n  \"sender\": \"accounts@zhenhua-hk.com\"\n}"
+      }
+     }
+    },
+    {
+     "name": "POST /api/copilot",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/copilot",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "copilot"
+       ],
+       "variable": []
+      },
+      "description": "Copilot Ask",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"question\": \"How much has the Buyer Shield protected, by guard?\"\n}"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "3 \u00b7 Buyer Shield",
+   "item": [
+    {
+     "name": "GET /api/shield",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/shield",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "shield"
+       ],
+       "variable": []
+      },
+      "description": "Buyer Shield"
+     }
+    },
+    {
+     "name": "POST /api/shield/quote",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/shield/quote",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "shield",
+        "quote"
+       ],
+       "variable": []
+      },
+      "description": "Shield Quote\n\nFair-price guard on an inbound quote (e.g. a broker offer) before any PO or hold exists.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"component_id\": \"COMP-104\",\n  \"supplier_id\": \"SUP-18\",\n  \"unit_price_inr\": 520,\n  \"quantity\": 700\n}"
+      }
+     }
+    },
+    {
+     "name": "POST /api/shield/hold/{po_id}",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/shield/hold/:po_id",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "shield",
+        "hold",
+        ":po_id"
+       ],
+       "variable": [
+        {
+         "key": "po_id",
+         "value": "PO-7718"
+        }
+       ]
+      },
+      "description": "Shield Hold\n\nPlace the PayPal hold for an existing PO through the guards (fair price, budget, authority)."
+     }
+    },
+    {
+     "name": "POST /api/shield/retention/{po_id}",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/shield/retention/:po_id",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "shield",
+        "retention",
+        ":po_id"
+       ],
+       "variable": [
+        {
+         "key": "po_id",
+         "value": "PO-7718"
+        }
+       ]
+      },
+      "description": "Shield Retention"
+     }
+    }
+   ]
+  },
+  {
+   "name": "4 \u00b7 PayPal money layer",
+   "item": [
+    {
+     "name": "GET /api/finance/summary",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/finance/summary",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "finance",
+        "summary"
+       ],
+       "variable": []
+      },
+      "description": "Finance Summary"
+     }
+    },
+    {
+     "name": "POST /api/finance/mandate/start",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/finance/mandate/start",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "finance",
+        "mandate",
+        "start"
+       ],
+       "variable": []
+      },
+      "description": "Mandate Start"
+     }
+    },
+    {
+     "name": "POST /api/finance/mandate/complete",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/finance/mandate/complete",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "finance",
+        "mandate",
+        "complete"
+       ],
+       "variable": []
+      },
+      "description": "Mandate Complete",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"approval_token_id\": \"\"\n}"
+      }
+     }
+    },
+    {
+     "name": "GET /api/finance/payments",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/finance/payments",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "finance",
+        "payments"
+       ],
+       "variable": []
+      },
+      "description": "Finance Payments"
+     }
+    },
+    {
+     "name": "GET /api/finance/approvals",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/finance/approvals",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "finance",
+        "approvals"
+       ],
+       "variable": []
+      },
+      "description": "Finance Approvals"
+     }
+    },
+    {
+     "name": "POST /api/finance/approvals/{approval_id}/decide",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/finance/approvals/:approval_id/decide",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "finance",
+        "approvals",
+        ":approval_id",
+        "decide"
+       ],
+       "variable": [
+        {
+         "key": "approval_id",
+         "value": ""
+        }
+       ]
+      },
+      "description": "Finance Decide",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"decision\": \"\",\n  \"code\": \"\"\n}"
+      }
+     }
+    },
+    {
+     "name": "POST /api/webhooks/paypal",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/webhooks/paypal",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "webhooks",
+        "paypal"
+       ],
+       "variable": []
+      },
+      "description": "Paypal Webhook\n\nPayPal \u2192 us. Verified with PayPal's signature API, stored idempotently."
+     }
+    }
+   ]
+  },
+  {
+   "name": "5 \u00b7 Proof (warehouse)",
+   "item": [
+    {
+     "name": "POST /api/warehouse/receive",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/warehouse/receive",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "warehouse",
+        "receive"
+       ],
+       "variable": []
+      },
+      "description": "Receive Shipment\n\nReceived is not usable. This is the quality gate.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"po_id\": \"PO-7718\",\n  \"quantity_received\": 400,\n  \"quantity_approved\": 380,\n  \"invoice_number\": \"KES-2209\"\n}"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "6 \u00b7 UI",
+   "item": [
+    {
+     "name": "POST /api/scenarios/reset",
+     "request": {
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/scenarios/reset",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "scenarios",
+        "reset"
+       ],
+       "variable": []
+      },
+      "description": "Reset\n\nRe-seed operational state.\n\nmode=demo (default) : operational tables only. Run history \u2014 scenario_runs,\n                      run_scores, audit_events \u2014 is PRESERVED, so you keep\n                      the comparisons you are tuning against.\nmode=hard           : also wipes history. Use between dev sessions, never\n                      mid-tuning and never on demo day."
+     }
+    },
+    {
+     "name": "GET /api/ui/snapshot",
+     "request": {
+      "method": "GET",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base}}/api/ui/snapshot",
+       "host": [
+        "{{base}}"
+       ],
+       "path": [
+        "api",
+        "ui",
+        "snapshot"
+       ],
+       "variable": []
+      },
+      "description": "Ui Snapshot Endpoint\n\nEverything the dashboard draws, in the exact shape the UI renders."
+     }
+    }
+   ]
+  }
+ ]
+}
