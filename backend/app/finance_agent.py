@@ -442,7 +442,10 @@ async def on_webhook(conn, event: dict, *, verified: bool) -> dict:
                  f"PayPal confirmed {etype.lower().replace('_', ' ')}" + (" (signature verified)" if verified else " (UNVERIFIED — ignored for state)"),
                  api="POST /api/webhooks/paypal", paypal_id=next(iter(ids), None))
     target = _STATE_FOR_EVENT.get(etype)
-    if verified and target and p["state"] != target and p["state"] not in ("refunded",):
+    # A capture webhook confirms money we already moved; it must not erase finer states
+    # we know about (retention still held, a guard block, a later refund).
+    keep = {"refunded", "blocked"} | ({"retention_held"} if target == "funds_released" else set())
+    if verified and target and p["state"] != target and p["state"] not in keep:
         await _set(conn, p["id"], state=target)
     return {"matched": True, "payment_id": p["id"], "org_id": p["org_id"]}
 
