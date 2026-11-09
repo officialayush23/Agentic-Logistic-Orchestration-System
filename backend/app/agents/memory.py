@@ -51,7 +51,7 @@ async def open_memory(force_memory: bool = False):
             async def _configure(conn):
                 await conn.execute("set search_path to langgraph, public")
 
-            pool = AsyncConnectionPool(url, min_size=1, max_size=int(os.getenv("AGENT_POOL_MAX", "5")),
+            pool = AsyncConnectionPool(url, min_size=1, max_size=int(os.getenv("AGENT_POOL_MAX", "3")),
                                        open=False, configure=_configure, timeout=15,
                                        kwargs={"autocommit": True, "prepare_threshold": None,
                                                "row_factory": dict_row})

@@ -23,6 +23,13 @@ load_dotenv()
 # ---------------------------------------------------------------- config ----
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+# Tenancy rides on session settings (set_config('app.org_id', ..., false)).
+# Supabase's transaction pooler (port 6543) does not pin a server connection to
+# a client connection, so a concurrent request (e.g. a PayPal webhook landing
+# mid-capture) could reset app.org_id under us. Session mode (5432, same host)
+# keeps one server connection per client connection for its whole life.
+if os.getenv("DB_SESSION_MODE", "true").lower() not in ("0", "false", "no"):
+    DATABASE_URL = DATABASE_URL.replace(":6543/", ":5432/")
 # Render runs this against the Supabase transaction pooler (port 6543). That
 # pooler rotates and drops connections without warning, which is why the pool
 # below recycles idle connections early and `db_conn` probes before handing
@@ -56,7 +63,7 @@ async def db() -> asyncpg.Pool:
         _pool = await asyncpg.create_pool(
             DATABASE_URL,
             min_size=1,
-            max_size=8,
+            max_size=int(os.getenv("DB_POOL_MAX", "6")),
             statement_cache_size=0,   # safe if someone points this at a pooler
             max_inactive_connection_lifetime=IDLE_RECYCLE_SECONDS,
             command_timeout=30,

@@ -50,8 +50,9 @@ async def mandate(conn) -> dict | None:
 async def _event(conn, payment_id: int, type_: str, detail: str, *, api: str | None = None,
                  paypal_id: str | None = None, payload: dict | None = None) -> None:
     await conn.execute(
-        """insert into payment_events (payment_id, type, detail, api, paypal_id, payload)
-           values ($1,$2,$3,$4,$5,$6::jsonb)""",
+        """insert into payment_events (payment_id, type, detail, api, paypal_id, payload, org_id)
+           select $1,$2,$3,$4,$5,$6::jsonb,
+                  coalesce(nullif(current_setting('app.org_id', true), ''), (select org_id from payments where id=$1))""",
         payment_id, type_, detail, api, paypal_id, json.dumps(payload or {}, default=str))
     await broadcast_state("payment_event", {"payment_id": payment_id, "type": type_})
 
