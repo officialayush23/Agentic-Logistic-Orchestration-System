@@ -186,7 +186,8 @@ async def duplicate(conn, payment: dict, *, invoice_number: str | None) -> Verdi
         return Verdict("duplicate", "block", f"{po_id} is cancelled; nothing is owed on it.", amount_usd=amount)
     already = await conn.fetchval(
         """select coalesce(sum(coalesce(captured_usd, amount_usd)),0) from payments
-            where po_id=$1 and id<>$2 and capture_id is not null and state <> 'refunded'""",
+            where po_id=$1 and id<>$2 and capture_id is not null and state <> 'refunded'
+              and not archived""",
         po_id, payment["id"]) or 0
     if float(already) > 0:
         return Verdict("duplicate", "block", f"{po_id} was already paid ${float(already):,.2f}; second payment refused.",
@@ -195,7 +196,8 @@ async def duplicate(conn, payment: dict, *, invoice_number: str | None) -> Verdi
         key = norm_invoice(invoice_number)
         rows = await conn.fetch(
             """select id, po_id, invoice_number, amount_usd from payments
-                where id<>$1 and invoice_number is not null and capture_id is not null""", payment["id"])
+                where id<>$1 and invoice_number is not null and capture_id is not null
+                  and not archived""", payment["id"])
         for r in rows:
             same_amount = abs(float(r["amount_usd"]) - amount) <= max(1.0, amount * 0.01)
             if norm_invoice(r["invoice_number"]) == key and same_amount:

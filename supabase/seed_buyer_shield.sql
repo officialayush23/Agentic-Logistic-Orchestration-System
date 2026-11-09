@@ -43,6 +43,8 @@ update suppliers set paypal_email = case id
 update suppliers set paypal_email_verified = paypal_email, payee_locked_at = coalesce(payee_locked_at, now())
  where paypal_email_verified is null;
 delete from payee_change_requests where status = 'pending';
+-- a reset starts a fresh demo ledger (agent long-term memory is kept on purpose)
+delete from guard_events;
 
 -- ---- should-cost benchmarks (INR, same unit as purchase_orders.unit_price) ---
 insert into price_benchmarks (component_id, should_cost_inr, last_paid_inr, index_name, index_base, index_now, deadband_pct) values
