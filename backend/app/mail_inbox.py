@@ -146,6 +146,15 @@ async def handle(msg: dict[str, Any]) -> dict[str, Any] | None:
             await conn.execute(
                 """insert into messages (incident_id, direction, supplier_id, subject, body)
                    values (null, 'inbound', $1, $2, $3)""", sup["id"], msg["subject"][:300], msg["body"])
+            # Same conversation the agents use, so the Messages tab shows it in context.
+            from . import comms
+            tid = await comms.open_thread(conn, incident_id=None, counterparty_type="supplier",
+                                          counterparty_id=sup["id"], counterparty_name=sup["name"],
+                                          subject=f"Email · {sup['name']}")
+            await comms.post(conn, thread_id=tid, direction="inbound", author_type="supplier",
+                             author_name=f"{sup['name']} <{msg['from']}>",
+                             body=f"{msg['subject']}\n\n{msg['body']}".strip(),
+                             is_contradiction=c["kind"] == "payee_change")
             await emit(conn, incident_id=None, actor="supplier", event_type="EMAIL_RECEIVED",
                        human_summary=f"Email from {sup['name']} ({msg['from']}): read as {c['kind'].replace('_', ' ')}.",
                        payload={"subject": msg["subject"], **c})

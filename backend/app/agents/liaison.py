@@ -32,6 +32,14 @@ async def liaison(state: dict) -> dict:
                                                           ("From", p.get("sender") or "unknown"),
                                                           ("Status", "Locked 72 h")]))
                 sent += 1
+                tid = await comms.open_thread(conn, incident_id=None, counterparty_type="supplier",
+                                              counterparty_id=p.get("supplier_id"), counterparty_name=s["name"],
+                                              subject=f"Email · {s['name']}")
+                await comms.post(conn, thread_id=tid, direction="outbound", author_type="agent",
+                                 author_name="Liaison agent", to_name=s["name"],
+                                 body=(f"To {s['email']} (the contact on file, not the sender): we received a request to move "
+                                       f"your payouts to {p.get('new_email')}. Nothing changes until you confirm from this "
+                                       "address and our approver signs off after 72 h."))
             return {"phase": "communicated",
                     "trail": [step("liaison", f"Asked {s['name'] if s else 'the supplier'} to confirm the payee change "
                                               "from the contact on file")]}
@@ -43,6 +51,14 @@ async def liaison(state: dict) -> dict:
                              "reason": "no acknowledgement in 48 h" if po["kind"] == "no_ack"
                              else f"ship date pushed {po.get('days')} days"})
                 sent += 1
+                tid = await comms.open_thread(conn, incident_id=None, counterparty_type="supplier",
+                                              counterparty_id=p.get("supplier_id"), counterparty_name=s["name"],
+                                              subject=f"Email · {s['name']}")
+                await comms.post(conn, thread_id=tid, direction="outbound", author_type="agent",
+                                 author_name="Liaison agent", to_name=s["name"],
+                                 body=(f"To {s['email']} (the contact on file, not the sender): we received a request to move "
+                                       f"your payouts to {p.get('new_email')}. Nothing changes until you confirm from this "
+                                       "address and our approver signs off after 72 h."))
             return {"phase": "communicated",
                     "trail": [step("liaison", f"Chased {sent} supplier(s) for acknowledgement / revised dates")]}
         await domain._communicate(conn, iid)

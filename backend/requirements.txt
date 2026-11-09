@@ -11,3 +11,5 @@ langgraph-checkpoint-postgres==3.2.0
 psycopg[binary,pool]==3.3.8
 langchain-core==1.7.6
 langchain-google-genai==4.4.3
+paypal-agent-toolkit==1.1.0
+langchain==1.4.9

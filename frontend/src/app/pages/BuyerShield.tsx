@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColDef } from 'ag-grid-community'
 import { AgGridReact } from 'ag-grid-react'
 import {
-  BadgeCheck, Clock, Copy, Hourglass, Landmark, Lock, PackageX, Play, Scale, Shield, Timer, Wallet, type LucideIcon,
+  BadgeCheck, Clock, Copy, Hourglass, Landmark, Lock, PackageX, Play, Scale, Shield, Timer, Undo2, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -23,6 +23,8 @@ const GUARDS: { id: string; title: string; icon: LucideIcon; what: string }[] = 
   { id: 'late_credit', title: 'Late credit', icon: Clock, what: 'Late-delivery penalty deducted from the capture' },
   { id: 'quality_holdback', title: 'Quality holdback', icon: PackageX, what: 'Pay accepted units only; retention until line acceptance' },
   { id: 'hold_expiry', title: 'Hold expiry', icon: Hourglass, what: 'Re-authorize holds before PayPal’s 29-day expiry' },
+  { id: 'early_pay', title: 'Early-pay discount', icon: Wallet, what: '2/10 net 30 taken when it beats the cost of capital' },
+  { id: 'chargeback', title: 'Chargebacks', icon: Undo2, what: 'Rework cost billed to the supplier by PayPal invoice' },
 ]
 // Shown only when the backend is not reachable (e.g. recording offline).
 const SAMPLE: Record<string, number> = { pay_on_proof: 7120, fair_price: 7770, duplicate: 5880, payee_lock: 4410, late_credit: 180, early_pay: 78, quality_holdback: 0, budget: 0, hold_expiry: 0 }
@@ -83,6 +85,33 @@ function RetentionCard() {
   )
 }
 
+function ChargebackCard() {
+  const pays = useQuery({ queryKey: ['payments-live'], queryFn: () => api<LivePayment[]>('/api/finance/payments'), retry: 3 })
+  const paid = (pays.data ?? []).filter((p) => ['funds_released', 'retention_held', 'payout_sent'].includes(p.state))
+  const [po, setPo] = useState(''), [amt, setAmt] = useState('120'), [why, setWhy] = useState('Rework: 20 units failed incoming QC, 3.5 h of line time to sort and replace')
+  const [last, setLast] = useState<string | null>(null)
+  const bill = useMutation({
+    mutationFn: () => api<{ invoice_id: string; recipient: string }>('/api/shield/chargeback', { method: 'POST', body: JSON.stringify({ po_id: po || paid[0]?.po_id, amount_usd: Number(amt), reason: why }) }),
+    onSuccess: (r) => { setLast(`Invoice ${r.invoice_id} sent to ${r.recipient}`); toast.success('Chargeback invoice sent by PayPal') },
+    onError: (e) => toast.error((e as Error).message.replace(/^.*→ \d+ /, '').slice(0, 200)),
+  })
+  if (!paid.length) return null
+  return (
+    <GlassCard>
+      <CardHeader icon={Undo2} tone="warn" title="Bill a supplier (chargeback)" subtitle="PayPal Invoicing v2 · goes to the supplier's verified payee, never an address from an email" />
+      <div className="grid gap-2 md:grid-cols-[160px_120px_1fr_auto]">
+        <select value={po || paid[0]?.po_id} onChange={(e) => setPo(e.target.value)} className="glass h-10 rounded-xl px-3 text-sm outline-none">
+          {paid.map((p) => <option key={p.id} value={p.po_id}>{p.po_id}</option>)}
+        </select>
+        <input value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^0-9.]/g, ''))} className="glass h-10 rounded-xl px-3 text-sm outline-none" aria-label="Amount in USD" />
+        <input value={why} onChange={(e) => setWhy(e.target.value)} className="glass h-10 rounded-xl px-3 text-sm outline-none" aria-label="Reason" />
+        <PrimaryButton icon={false} disabled={bill.isPending || !Number(amt)} onClick={() => bill.mutate()}>{bill.isPending ? 'Sending…' : 'Send invoice'}</PrimaryButton>
+      </div>
+      {last && <p className="mt-2 text-xs text-muted-foreground">{last}</p>}
+    </GlassCard>
+  )
+}
+
 export default function BuyerShield() {
   const qc = useQueryClient()
   const shield = useQuery({
@@ -137,7 +166,7 @@ export default function BuyerShield() {
         { label: 'Budget envelopes', value: String(envelopes.length), icon: Landmark, tone: 'azure', note: 'one per project' },
       ]} />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {GUARDS.map((g, i) => {
           const v = byGuard(g.id)
           return (
@@ -202,6 +231,7 @@ export default function BuyerShield() {
       </div>
 
       <RetentionCard />
+      <ChargebackCard />
 
       <GlassCard>
         <CardHeader icon={Shield} tone="good" title="Guard ledger" subtitle="every verdict, newest first (AG Grid)" />

@@ -1,5 +1,5 @@
 import {
-  Bot, Factory, Network, Shield, FlaskConical, FolderKanban, Plug, Radar, ScrollText, ShieldCheck, Ship, Wallet,
+  Bot, Factory, MessagesSquare, Network, Shield, FlaskConical, FolderKanban, Plug, Radar, ScrollText, ShieldCheck, Ship, Wallet,
   type LucideIcon,
 } from 'lucide-react'
 import { data } from '../data/source'
@@ -17,6 +17,7 @@ export const mainNav: NavItem[] = [
   { to: '/shield', label: 'Buyer Shield', icon: Shield },
   { to: '/agent', label: 'Agent Board', icon: Bot, count: openIncidents },
   { to: '/team', label: 'Agent Team', icon: Network },
+  { to: '/messages', label: 'Messages', icon: MessagesSquare },
   { to: '/approvals', label: 'Approvals', icon: ShieldCheck, count: pendingApprovals },
   { to: '/suppliers', label: 'Suppliers', icon: Factory },
   { to: '/simulate', label: 'Simulation Lab', icon: FlaskConical },

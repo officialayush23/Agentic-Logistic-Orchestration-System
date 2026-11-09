@@ -1,7 +1,10 @@
 import type { ColDef } from 'ag-grid-community'
 import { AgGridReact } from 'ag-grid-react'
-import { BarChart3, Lock, PencilRuler, ReceiptText, Undo2, Wallet } from 'lucide-react'
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { BarChart3, Lock, PencilRuler, ReceiptText, ShieldCheck, Undo2, Wallet } from 'lucide-react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
+import { api } from '../data/live'
 import { cn } from '@/lib/utils'
 import { glassGridTheme } from '../ag/setup'
 import { FinancialCell, MoneyCell, SupplierCell } from '../ag/renderers'
@@ -9,12 +12,49 @@ import { data, inr, paymentByPo, projectById, rel, totals, usd } from '../data/s
 import type { Payment } from '../data/types'
 import { StatusBadge } from '../ui/badges'
 import { PaymentCard } from '../ui/finance'
-import { CardHeader, GlassCard, SectionTitle, Skeleton } from '../ui/glass'
+import { CardHeader, GlassCard, SecondaryButton, SectionTitle, Skeleton } from '../ui/glass'
 import { KpiRow } from '../ui/Kpi'
 
 const StudioDashboard = lazy(() => import('../ag/StudioDashboard').then((m) => ({ default: m.StudioDashboard })))
 
 type Row = Payment & { project: string; last: string; lastType: string }
+
+/** PayPal Vault v3: the one human-approved mandate the agents draw on. */
+function MandateCard() {
+  const health = useQuery({ queryKey: ['integrations-health'], retry: 3,
+    queryFn: () => api<{ integrations: Record<string, { state: string; detail: string }> }>('/api/integrations/health') })
+  const done = useRef(false)
+  const complete = useMutation({
+    mutationFn: (tok: string) => api<{ vault_id?: string }>('/api/finance/mandate/complete', { method: 'POST', body: JSON.stringify({ approval_token_id: tok }) }),
+    onSuccess: (r) => { toast.success(`PayPal mandate saved${r.vault_id ? ` (vault ${r.vault_id})` : ''}`); health.refetch(); history.replaceState(null, '', '/payments') },
+    onError: (e) => toast.error((e as Error).message.slice(0, 160)),
+  })
+  useEffect(() => {
+    const q = new URLSearchParams(location.search)
+    const tok = q.get('approval_token_id')
+    if (q.get('mandate') === 'return' && tok && !done.current) { done.current = true; complete.mutate(tok) }
+    if (q.get('mandate') === 'cancel') toast.message('PayPal approval cancelled; the existing mandate stays in place')
+  }, [complete])
+  const start = useMutation({
+    mutationFn: () => api<{ approve_url: string }>('/api/finance/mandate/start', { method: 'POST' }),
+    onSuccess: (r) => { location.href = r.approve_url },
+    onError: (e) => toast.error((e as Error).message.slice(0, 160)),
+  })
+  const v = health.data?.integrations.vault
+  return (
+    <GlassCard className="flex flex-wrap items-center gap-4 p-4">
+      <span className="grid size-10 place-items-center rounded-2xl bg-gradient-to-br from-violet to-azure text-white"><ShieldCheck className="size-5" /></span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold">PayPal spending mandate (Vault v3)</p>
+        <p className="text-xs text-muted-foreground">{v ? v.detail : 'Checking…'} · the agents can only hold funds against this; release above the limit still needs your code.</p>
+      </div>
+      {v && <StatusBadge tone={v.state === 'live' ? 'good' : 'warn'} dot>{v.state === 'live' ? 'active' : 'not connected'}</StatusBadge>}
+      <SecondaryButton onClick={() => start.mutate()} disabled={start.isPending || complete.isPending}>
+        {start.isPending ? 'Opening PayPal…' : v?.state === 'live' ? 'Re-approve on PayPal' : 'Connect PayPal'}
+      </SecondaryButton>
+    </GlassCard>
+  )
+}
 
 export default function Payments() {
   const t = totals()
@@ -42,6 +82,7 @@ export default function Payments() {
   return (
     <>
       <SectionTitle title="Payments" subtitle="Every dollar the agent has held, released, voided or refunded through PayPal — and why" />
+      <MandateCard />
       <KpiRow items={[
         { label: 'Held (authorized, not moved)', value: usd(t.held), icon: Lock, tone: 'azure', note: inr(t.held) },
         { label: 'Released to suppliers', value: usd(t.released), icon: Wallet, tone: 'good', note: 'only after goods verified' },

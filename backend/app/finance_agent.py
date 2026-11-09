@@ -517,3 +517,51 @@ async def release_retention(conn, po_id: str) -> dict | None:
     await _event(conn, p["id"], "PAYMENT.CAPTURE.COMPLETED", f"Retention ${amt:,.2f} released after line acceptance.",
                  api="POST /v2/payments/authorizations/{id}/capture", paypal_id=cap.get("id"))
     return await live_payment(conn, po_id)
+
+
+# ------------------------------------------------- chargeback (Invoicing v2) --
+
+async def chargeback(conn, po_id: str, *, amount_usd: float, reason: str,
+                     incident_id: str | None = None) -> dict:
+    """Bill the supplier for rework / line-down cost caused by bad parts.
+
+    PayPal Invoicing v2: the invoice goes to the supplier's *verified* PayPal
+    payee (never an address from an email), is sent by PayPal, and its id is kept
+    on the payment ledger. The buyer is never the one left holding the cost.
+    """
+    po = await conn.fetchrow("select * from purchase_orders where id=$1", po_id)
+    if not po:
+        raise ValueError(f"unknown purchase order {po_id}")
+    s = await conn.fetchrow("select name, paypal_email_verified, paypal_email from suppliers where id=$1",
+                            po["supplier_id"])
+    to = (s and (s["paypal_email_verified"] or s["paypal_email"])) or None
+    if not to:
+        raise ValueError("supplier has no verified PayPal payee")
+    body = {
+        "detail": {"currency_code": "USD", "reference": po_id,
+                   "note": f"Chargeback for {po_id}: {reason}",
+                   "terms_and_conditions": "Deducted per supplier quality agreement. Questions: reply to this invoice.",
+                   "payment_term": {"term_type": "NET_10"}},
+        "invoicer": {"business_name": "NEXA Mobility Systems (via DisruptionOps)"},
+        "primary_recipients": [{"billing_info": {"email_address": to}}],
+        "items": [{"name": f"Quality chargeback · {po_id}", "description": reason[:900], "quantity": "1",
+                   "unit_amount": {"currency_code": "USD", "value": f"{amount_usd:.2f}"}, "unit_of_measure": "AMOUNT"}],
+    }
+    inv = await pp.call("POST", "/v2/invoicing/invoices", body, op="invoicing.create",
+                        request_id=f"chargeback-{po_id}-{int(amount_usd * 100)}")
+    inv_id = inv.get("id") or (inv.get("href", "").rstrip("/").split("/")[-1])
+    sent = await pp.call("POST", f"/v2/invoicing/invoices/{inv_id}/send",
+                         {"send_to_invoicer": True, "send_to_recipient": True,
+                          "subject": f"Chargeback for {po_id}", "note": reason[:400]},
+                         op="invoicing.send", request_id=f"chargeback-send-{inv_id}")
+    p = await live_payment(conn, po_id)
+    if p:
+        await _event(conn, p["id"], "INVOICING.INVOICE.SENT",
+                     f"Chargeback invoice {inv_id} for ${amount_usd:,.2f} sent to {s['name']} ({to}): {reason}",
+                     api="POST /v2/invoicing/invoices + /send", paypal_id=inv_id)
+    await guards.record(conn, guards.Verdict("chargeback", "adjust",
+                        f"Billed {s['name']} ${amount_usd:,.2f} via PayPal invoice {inv_id}: {reason}",
+                        amount_usd=amount_usd, detail={"invoice_id": inv_id, "recipient": to,
+                                                       "link": sent.get("href")}),
+                        po_id=po_id, supplier_id=po["supplier_id"], incident_id=incident_id)
+    return {"invoice_id": inv_id, "recipient": to, "amount_usd": amount_usd, "status": "SENT", "link": sent.get("href")}

@@ -19,6 +19,7 @@ const Audit = lazy(() => import('./pages/Audit'))
 const Integrations = lazy(() => import('./pages/Integrations'))
 const AgentTeam = lazy(() => import('./pages/AgentTeam'))
 const BuyerShield = lazy(() => import('./pages/BuyerShield'))
+const Messages = lazy(() => import('./pages/Messages'))
 
 function PageLoading() {
   return (
@@ -45,6 +46,7 @@ const router = createBrowserRouter([
       { path: '/agent', element: suspended(<AgentBoard />) },
       { path: '/team', element: suspended(<AgentTeam />) },
       { path: '/shield', element: suspended(<BuyerShield />) },
+      { path: '/messages', element: suspended(<Messages />) },
       { path: '/approvals', element: suspended(<Approvals />) },
       { path: '/suppliers', element: suspended(<Suppliers />) },
       { path: '/simulate', element: suspended(<SimulationLab />) },

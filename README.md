@@ -29,6 +29,8 @@ DisruptionOps is a **buyer-side agent team** for manufacturers. It makes sure su
 | Payments v2 | `…/authorizations/{id}/reauthorize` | `finance_agent.reauthorize_stale_holds` | Holds older than 25 days on long ocean legs (PayPal expires them at 29) |
 | Payouts | `POST /v1/payments/payouts` | `finance_agent` | Supplier payment, **only to the locked, verified payee**; forwarder expedite fees |
 | Webhooks | register + `verify-webhook-signature` | `main.py /api/webhooks/paypal` | Every PayPal state change; idempotent by event id |
+| Invoicing v2 | `POST /v2/invoicing/invoices` + `/send` | `finance_agent.chargeback` | Rework / line-down cost billed to the supplier's verified payee (Buyer Shield → chargeback) |
+| Agent Toolkit | `paypal-agent-toolkit` (LangChain) | `agents/copilot.py` | Read-only tools for the Copilot: `get_order_details`, `list_invoices`, `get_invoice` |
 
 A vaulted token can't pay a third party directly (`BILLING_AGREEMENT_NOT_FOUND`), so money is held and captured to the DisruptionOps merchant, then paid out to the supplier. That turned out to be exactly where the guards belong.
 
@@ -75,6 +77,7 @@ Fair price (should-cost / last paid / index de-escalation) · budget envelope pe
 | **AG Studio** | Payments finance dashboards |
 | **Bryntum** | Gantt (project timeline with order-by and payment milestones), Scheduler (supplier lanes), TaskBoard (incident board) |
 | **Render** | Docker web service for the API (`Dockerfile`, `render.yaml`); migrations and demo config apply on boot |
+| **Zapier** | `ZAPIER_WEBHOOK_URL`: every guard block/escalation is POSTed to a Zapier Catch Hook (Slack, Sheets, SMS) |
 | **Postman** | `postman/DisruptionOps.postman_collection.json` (23 requests in 6 folders: auth, agent team, Buyer Shield, PayPal money layer, proof, UI; login stores the bearer token) + `postman/openapi.json` |
 
 Also used: Mapbox GL (globe), Supabase Postgres (RLS multi-tenancy), Vercel (frontend).

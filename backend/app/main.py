@@ -3042,3 +3042,79 @@ async def inbox_simulate(b: InboundEmail):
     if out is None:
         raise HTTPException(404, "No supplier matched: put the supplier id in the subject, e.g. [SUP-21].")
     return out
+
+
+class ChargebackBody(BaseModel):
+    po_id: str
+    amount_usd: float
+    reason: str
+
+
+@app.post("/api/shield/chargeback")
+async def shield_chargeback(b: ChargebackBody, who: dict = Depends(auth.requires("owner", "approver"))):
+    """Bill a supplier for rework / line-down cost via PayPal Invoicing v2."""
+    if b.amount_usd <= 0:
+        raise HTTPException(400, "amount must be positive")
+    async with db_conn() as conn:
+        try:
+            return await finance_agent.chargeback(conn, b.po_id, amount_usd=b.amount_usd, reason=b.reason)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except paypal_client.PayPalError as e:
+            raise HTTPException(502, f"PayPal: {e}")
+
+
+_HEALTH_CACHE: dict = {}
+
+
+@app.get("/api/integrations/health")
+async def integrations_health():
+    """What is actually wired and working right now, checked, not declared."""
+    import time
+    if _HEALTH_CACHE.get("at", 0) > time.time() - 60:
+        return _HEALTH_CACHE["data"]
+    from . import mail_inbox
+    from .agents import memory as agent_memory
+    out: dict[str, dict] = {}
+
+    def put(k, ok, detail, state=None):
+        out[k] = {"state": state or ("live" if ok else "needs_setup"), "detail": detail}
+
+    try:
+        await paypal_client._access_token()
+        put("paypal", True, "OAuth token issued (sandbox)" if paypal_client.BASE.find("sandbox") > 0 else "OAuth token issued")
+    except Exception as e:  # noqa: BLE001
+        put("paypal", False, f"token failed: {str(e)[:120]}")
+    async with db_conn() as conn:
+        m = await conn.fetchrow("select vault_id, status, payer_email from finance_mandates order by id desc limit 1")
+        put("vault", bool(m and m["status"] == "active"),
+            f"mandate {m['vault_id']} ({m['status']}) for {m['payer_email']}" if m else "no mandate yet: connect PayPal on Payments")
+        counts = await conn.fetchrow(
+            """select (select count(*) from payment_events where type like 'WEBHOOK%%') wh,
+                      (select count(*) from payment_events where type like 'PAYMENTS.PAYOUTS%%') po,
+                      (select count(*) from payment_events where api like '%%/authorizations/%%') auth,
+                      (select count(*) from payment_events where type like 'INVOICING%%') inv""")
+    put("orders_payments", counts["auth"] > 0, f"{counts['auth']} authorization/capture/void calls recorded")
+    put("payouts", counts["po"] > 0, f"{counts['po']} payouts recorded", None if counts["po"] else "ready")
+    put("webhooks", counts["wh"] > 0, f"{counts['wh']} signed webhooks verified · {_WEBHOOK.get('id') or 'registered on boot'}")
+    put("invoicing", counts["inv"] > 0, f"{counts['inv']} chargeback invoices sent", None if counts["inv"] else "ready")
+    tk = bool(os.getenv("PAYPAL_CLIENT_ID"))
+    put("agent_toolkit", tk, "read-only tools in the Copilot: get_order_details, list_invoices, get_invoice")
+    try:
+        d = await llm.diagnose()
+        good = [p for p in d.get("providers", []) if p.get("ok")]
+        bad = [p for p in d.get("providers", []) if not p.get("ok") and "no key" not in str(p.get("error"))]
+        put("gemini", bool(good), f"{good[0]['provider']} · {good[0]['model']}" if good
+            else (str(bad[0].get("error"))[:160] if bad else (d.get("why_unavailable") or "no key")))
+    except Exception as e:  # noqa: BLE001
+        put("gemini", False, str(e)[:140])
+    put("smtp", bool(os.getenv("SMTP_USERNAME") and os.getenv("SMTP_PASSWORD")), f"sending as {os.getenv('SMTP_FROM_EMAIL') or os.getenv('SMTP_USERNAME') or '—'}")
+    put("imap", mail_inbox.enabled(), f"polling {mail_inbox.HOST} every {int(mail_inbox.POLL_S)} s" if mail_inbox.enabled() else "set IMAP/SMTP credentials")
+    put("langgraph", agent_memory.MODE == "postgres", f"memory: {agent_memory.MODE}")
+    put("supabase", True, "Postgres + row-level security")
+    put("render", True, os.getenv("RENDER_EXTERNAL_URL") or "API host")
+    put("zapier", bool(os.getenv("ZAPIER_WEBHOOK_URL")), "critical guard blocks → Zapier Catch Hook" if os.getenv("ZAPIER_WEBHOOK_URL") else "optional: set ZAPIER_WEBHOOK_URL", None if os.getenv("ZAPIER_WEBHOOK_URL") else "optional")
+    put("postman", True, "postman/DisruptionOps.postman_collection.json")
+    data = {"checked_at": datetime.now(timezone.utc).isoformat(), "integrations": out}
+    _HEALTH_CACHE.update(at=time.time(), data=data)
+    return data

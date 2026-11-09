@@ -15,7 +15,7 @@ from .core import as_system, db_conn
 
 log = logging.getLogger("disruptionops.migrate")
 ROOT = pathlib.Path(__file__).resolve().parents[2] / "supabase"
-AUTO = [m.strip() for m in os.getenv("AUTO_MIGRATIONS", "0011_paypal_finance_and_projects,0012_buyer_shield_and_agents").split(",") if m.strip()]
+AUTO = [m.strip() for m in os.getenv("AUTO_MIGRATIONS", "0011_paypal_finance_and_projects,0012_buyer_shield_and_agents,0013_chargebacks").split(",") if m.strip()]
 SHIELD_SEED = ROOT / "seed_buyer_shield.sql"
 
 

@@ -20,7 +20,7 @@ from . import memory, runtime
 SYSTEM = (
     "You are the DisruptionOps Copilot for a manufacturing buyer. Answer from tools, never from guesses. "
     "You can read projects, incidents (the agent team's live state), payments and the Buyer Shield ledger, "
-    "and supplier memory. You cannot move money: holds, captures, voids and payouts are made only by the "
+    "supplier memory, and PayPal itself through the PayPal Agent Toolkit (order details, invoices). You cannot move money: holds, captures, voids and payouts are made only by the "
     "Treasurer agent through deterministic guards. Be brief, give numbers with their source, and say "
     "plainly when data is missing."
 )
@@ -111,6 +111,21 @@ async def remember_note(note: str) -> str:
 TOOLS = [list_projects, open_incidents, get_incident, payments, buyer_shield, supplier_memory,
          past_episodes, remember_note]
 
+
+def paypal_toolkit_tools() -> list:
+    """PayPal Agent Toolkit, read-only: the Copilot can look things up in PayPal; it can't move money."""
+    cid, sec = os.getenv("PAYPAL_CLIENT_ID"), os.getenv("PAYPAL_CLIENT_SECRET")
+    if not (cid and sec):
+        return []
+    try:
+        from paypal_agent_toolkit.langchain.toolkit import PayPalToolkit
+        from paypal_agent_toolkit.shared.configuration import Configuration, Context
+    except Exception:  # noqa: BLE001
+        return []
+    cfg = Configuration(actions={"orders": {"get": True}, "invoices": {"list": True, "get": True}},
+                        context=Context(sandbox=os.getenv("PAYPAL_ENV", "sandbox") != "live"))
+    return PayPalToolkit(client_id=cid, secret=sec, configuration=cfg).get_tools()
+
 _agent = None
 
 
@@ -122,7 +137,7 @@ async def agent():
         saver, store = await memory.open_memory()
         model = ChatGoogleGenerativeAI(model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
                                        google_api_key=os.getenv("GEMINI_API_KEY"), temperature=0.2)
-        _agent = create_react_agent(model, TOOLS, prompt=SYSTEM, checkpointer=saver, store=store)
+        _agent = create_react_agent(model, TOOLS + paypal_toolkit_tools(), prompt=SYSTEM, checkpointer=saver, store=store)
     return _agent
 
 

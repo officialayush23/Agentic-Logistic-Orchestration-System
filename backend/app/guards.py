@@ -59,10 +59,31 @@ async def record(conn, v: Verdict, *, po_id: str | None = None, supplier_id: str
             v.reason, json.dumps(v.detail, default=str), agent)
     except Exception:  # noqa: BLE001 - migration 0012 not applied yet: never block money on logging
         pass
+    if v.outcome in ("block", "escalate"):
+        _notify_zapier(v, po_id=po_id, supplier_id=supplier_id, incident_id=incident_id)
     if v.outcome != "pass":
         await emit(conn, incident_id=incident_id, actor="agent", event_type=f"GUARD_{v.outcome.upper()}",
                    human_summary=f"[{v.guard}] {v.reason}",
                    payload={"po_id": po_id, "supplier_id": supplier_id, **v.to_dict()})
+
+
+def _notify_zapier(v: "Verdict", **ids: Any) -> None:
+    """Critical guard decisions → a Zapier Catch Hook (Slack, Sheets, SMS…). Fire-and-forget."""
+    import asyncio
+    import os
+    url = os.getenv("ZAPIER_WEBHOOK_URL")
+    if not url:
+        return
+
+    async def send():
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                await c.post(url, json={"source": "DisruptionOps", "guard": v.guard, "outcome": v.outcome,
+                                        "reason": v.reason, "amount_usd": v.amount_usd, **ids})
+        except Exception:  # noqa: BLE001
+            pass
+    asyncio.get_running_loop().create_task(send())
 
 
 def _usd(inr: float, rate: float) -> float:
