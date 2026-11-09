@@ -110,11 +110,12 @@ async def remember_supplier(org: str, supplier_id: str, kind: str, note: str, **
 
 
 def _trust(counts: dict[str, int]) -> str:
-    bad = counts.get("contradiction", 0) * 2 + counts.get("defect", 0) + counts.get("late", 0) \
-        + counts.get("payee_alert", 0) * 2
-    good = counts.get("good_delivery", 0)
-    score = good - bad
-    return "trusted" if score >= 2 else "watch" if score > -2 else "proof_only"
+    """Lying or a payee-redirect attempt is disqualifying on its own. Lateness and
+    defects only become disqualifying when they keep happening."""
+    if counts.get("contradiction", 0) or counts.get("payee_alert", 0):
+        return "proof_only"
+    score = counts.get("good_delivery", 0) - counts.get("defect", 0) - counts.get("late", 0)
+    return "trusted" if score >= 2 else "watch" if score > -3 else "proof_only"
 
 
 async def remember_episode(org: str, incident_id: str, summary: dict[str, Any]) -> None:

@@ -117,3 +117,11 @@ def test_guards_math():
 def test_no_plan_escalates_to_human():
     assert G.route({"trigger": "risk", "phase": "no_plan"})[0] == "approval"
     assert G.route({"trigger": "risk", "phase": "closed"})[0] == "__end__"
+
+
+def test_trust_rules():
+    from app.agents.memory import _trust
+    assert _trust({"late": 1, "defect": 1}) == "watch"
+    assert _trust({"contradiction": 1}) == "proof_only"
+    assert _trust({"late": 2, "defect": 2}) == "proof_only"
+    assert _trust({"good_delivery": 3}) == "trusted"
