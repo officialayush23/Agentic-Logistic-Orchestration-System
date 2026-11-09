@@ -49,7 +49,7 @@ async def _suppliers(conn):
         """select s.*,
                   (select count(*) from shipment_tracking t join purchase_orders p on p.id=t.po_id
                     where p.supplier_id=s.id and t.supplier_claim is not null) as checked,
-                  (select count(*) from reliability_events e where e.supplier_id=s.id and e.kind='contradiction') as lied,
+                  (select count(*) from reliability_events e where e.supplier_id=s.id and e.event ilike '%contradict%') as lied,
                   (select min(l.transit_days) from supplier_lanes l where l.supplier_id=s.id) as lead
              from suppliers s order by s.id""")
     return [{"id": r["id"], "name": r.get("legal_name") or r["name"], "city": r["city"], "country": r["country"],
