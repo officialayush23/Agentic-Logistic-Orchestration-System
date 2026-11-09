@@ -82,3 +82,19 @@
 .mapboxgl-ctrl-group { background: var(--glass-strong) !important; border: 1px solid var(--glass-border); border-radius: 0.75rem !important; box-shadow: var(--glass-shadow) !important; backdrop-filter: blur(18px); }
 .mapboxgl-ctrl-group button + button { border-top-color: oklch(1 0 0 / 0.6) !important; }
 .dark .mapboxgl-ctrl-group button .mapboxgl-ctrl-icon { filter: invert(1); }
+
+/* Gantt milestones (buy timers, PayPal releases, dispatch): explicit diamonds. */
+.bryntum-glass .b-milestone-wrap .b-milestone { background: transparent !important; display: grid; place-items: center; clip-path: none !important; }
+.bryntum-glass .b-milestone-wrap .b-milestone::before, .bryntum-glass .b-milestone-wrap .b-milestone::after,
+.bryntum-glass .b-milestone-wrap .b-gantt-task-content::before, .bryntum-glass .b-milestone-wrap .b-gantt-task-content::after { display: none !important; }
+.bryntum-glass .b-milestone-wrap .b-milestone .b-gantt-task-content {
+  width: 14px !important; height: 14px !important; min-width: 0 !important; padding: 0 !important; border-radius: 3px;
+  transform: rotate(45deg); clip-path: none !important; mask: none !important; flex: none;
+  background: var(--dia, oklch(0.56 0.22 278)); box-shadow: 0 0 0 3px oklch(1 0 0 / 0.65), 0 2px 8px oklch(0.3 0.1 280 / 0.25);
+}
+.bryntum-glass .b-milestone-wrap.b-color-red    { --dia: oklch(0.62 0.22 20); }
+.bryntum-glass .b-milestone-wrap.b-color-orange { --dia: oklch(0.75 0.16 65); }
+.bryntum-glass .b-milestone-wrap.b-color-green  { --dia: oklch(0.68 0.16 155); }
+.bryntum-glass .b-milestone-wrap.b-color-teal   { --dia: oklch(0.7 0.13 190); }
+.bryntum-glass .b-milestone-wrap.b-color-violet { --dia: oklch(0.56 0.22 278); }
+.dark .bryntum-glass .b-milestone-wrap .b-milestone .b-gantt-task-content { box-shadow: 0 0 0 3px oklch(0.2 0.03 280 / 0.8); }

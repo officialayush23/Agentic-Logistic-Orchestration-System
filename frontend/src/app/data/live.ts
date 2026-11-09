@@ -121,3 +121,18 @@ export async function bootLive(waitMs = 7000): Promise<void> {
     fetch(`${API}/api/health`).catch(() => undefined)
   }
 }
+
+/** Buy timers for the UI: live BOM lines when connected, otherwise derived from the sample BOM. */
+const SAMPLE_LEAD = [3, 5, 4, 9, 2, 7, 6, 12, 4, 8, 5, 10, 3, 11]
+export function buyTimers(projectId?: string): BuyTimer[] {
+  const all: BuyTimer[] = live.buyTimers.length ? live.buyTimers : m.bom.map((b, i) => {
+    const due = m.projects.find((p) => p.id === b.projectId)?.dueAt ?? new Date().toISOString()
+    return {
+      projectId: b.projectId, componentId: b.componentId, name: m.components.find((c) => c.id === b.componentId)?.name,
+      qty: b.required, needBy: due,
+      orderBy: new Date(new Date(due).getTime() - SAMPLE_LEAD[i % SAMPLE_LEAD.length] * 86_400_000).toISOString(),
+      orderedPoId: b.onHand >= b.required ? 'in stock' : null,
+    }
+  })
+  return projectId ? all.filter((t) => t.projectId === projectId) : all
+}

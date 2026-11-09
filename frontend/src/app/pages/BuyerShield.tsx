@@ -8,8 +8,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { glassGridTheme } from '../ag/setup'
-import { api, live, type GuardEvent } from '../data/live'
-import { componentById, data, projectById, usd } from '../data/source'
+import { api, buyTimers, live, type GuardEvent } from '../data/live'
+import { data, projectById, usd } from '../data/source'
 import { StatusBadge } from '../ui/badges'
 import { Callout, CardHeader, GlassCard, PrimaryButton, SectionTitle } from '../ui/glass'
 import { KpiRow } from '../ui/Kpi'
@@ -90,14 +90,7 @@ export default function BuyerShield() {
     { field: 'reason', headerName: 'Why', flex: 1, minWidth: 320, tooltipField: 'reason' },
   ], [])
 
-  // Sample fallback: lead times spread so a few timers are red, most are not.
-  const LEAD = [3, 5, 4, 9, 2, 7, 6, 12, 4, 8, 5, 10, 3, 11]
-  const timers = live.buyTimers.length ? live.buyTimers : data.bom.map((b, i) => ({
-    projectId: b.projectId, componentId: b.componentId, name: componentById[b.componentId]?.name, qty: b.required,
-    needBy: projectById[b.projectId]?.dueAt,
-    orderBy: new Date(new Date(projectById[b.projectId]?.dueAt ?? Date.now()).getTime() - LEAD[i % LEAD.length] * 86_400_000).toISOString(),
-    orderedPoId: b.onHand >= b.required ? 'in stock' : null,
-  }))
+  const timers = buyTimers()
   const envelopes = live.budgetEnvelopes.length ? live.budgetEnvelopes
     : data.projects.map((p) => ({ projectId: p.id, capUsd: Math.max(12000, Math.round(p.committedUsd * 1.4 / 1000) * 1000), windowStart: '', windowEnd: '' }))
 

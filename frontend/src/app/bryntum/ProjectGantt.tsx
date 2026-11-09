@@ -8,6 +8,7 @@ import { useMemo } from 'react'
 import './bryntum.css'
 import { componentById, projectById, projectPOs, shipmentByPo, supplierById } from '../data/source'
 import { financialMeta } from '../ui/badges'
+import { buyTimers } from '../data/live'
 
 const D = 86_400_000
 const toDate = (iso: string) => new Date(iso)
@@ -44,8 +45,21 @@ export function ProjectGantt({ projectId, height = 640 }: { projectId: string; h
       note: financialMeta[po.financial].hint,
     }))
 
+    // Buy timers: the last day each part can be ordered without moving the due date.
+    const timerTasks = buyTimers(projectId).map((t) => {
+      const left = new Date(t.orderBy).getTime() - Date.now()
+      return {
+        id: `BUY-${t.componentId}`,
+        name: `Order-by · ${t.name ?? t.componentId}${t.orderedPoId ? ` (${t.orderedPoId})` : ''}`,
+        startDate: new Date(t.orderBy), duration: 0, manuallyScheduled: true,
+        eventColor: t.orderedPoId ? 'green' : left < 48 * 3_600_000 ? 'red' : left < 7 * D ? 'orange' : 'violet',
+        note: `Need by ${new Date(t.needBy).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · ${t.qty.toLocaleString('en-IN')} pcs · order-by = need-by − lead − transit − buffer`,
+      }
+    })
+
     const latestEta = Math.max(...live.map((po) => toDate(po.etaAt).getTime()), Date.now())
     const tasksData = [
+      ...(timerTasks.length ? [{ id: 'BUY', name: 'Buy timers', expanded: true, children: timerTasks }] : []),
       { id: 'MAT', name: 'Materials', expanded: true, children: materialTasks },
       { id: 'PAY', name: 'PayPal releases', expanded: true, children: releaseMilestones },
       {
@@ -65,7 +79,7 @@ export function ProjectGantt({ projectId, height = 640 }: { projectId: string; h
       { fromTask: 'EOL', toTask: 'SHIP' },
     ]
 
-    const start = new Date(Math.min(...pos.map((po) => toDate(po.createdAt).getTime())) - D)
+    const start = new Date(Math.min(...pos.map((po) => toDate(po.createdAt).getTime()), ...timerTasks.map((t) => t.startDate.getTime()), Date.now()) - D)
     const end = new Date(Math.max(toDate(p.dueAt).getTime(), latestEta) + 4 * D)
 
     return {
