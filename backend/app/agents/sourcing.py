@@ -22,7 +22,7 @@ async def sourcing(state: dict) -> dict:
         if store is not None:
             for item in await store.asearch(("org", org, "supplier"), limit=200):
                 prof = item.value or {}
-                if prof.get("trust") == "proof_only":
+                if memory._trust(prof.get("counts") or {}) == "proof_only":
                     exists = await conn.fetchval(
                         """select 1 from agent_constraints where incident_id=$1 and target=$2
                             and constraint_type='exclude_supplier' and active""", iid, item.key)

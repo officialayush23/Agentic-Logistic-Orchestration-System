@@ -92,7 +92,11 @@ async def supplier_profile(org: str, supplier_id: str) -> dict[str, Any]:
     if _store is None:
         return {}
     item = await _store.aget(_ns(org, "supplier"), supplier_id)
-    return dict(item.value) if item else {}
+    if not item:
+        return {}
+    prof = dict(item.value)
+    prof["trust"] = _trust(prof.get("counts") or {})   # policy applies to history on every read
+    return prof
 
 
 async def remember_supplier(org: str, supplier_id: str, kind: str, note: str, **extra: Any) -> dict:
