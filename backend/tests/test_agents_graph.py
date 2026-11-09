@@ -112,3 +112,8 @@ def test_guards_math():
     assert guards.norm_invoice("ZH-INV-55120-A") == guards.norm_invoice("ZH/INV/55120")
     ok, r = guards.early_pay(2, 10, 30)
     assert ok and abs(r - 0.3724) < 0.001
+
+
+def test_no_plan_escalates_to_human():
+    assert G.route({"trigger": "risk", "phase": "no_plan"})[0] == "approval"
+    assert G.route({"trigger": "risk", "phase": "closed"})[0] == "__end__"

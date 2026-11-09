@@ -23,6 +23,8 @@ log = logging.getLogger("disruptionops.agents")
 _graph = None
 _lock = asyncio.Lock()
 _RUNNING: dict[str, asyncio.Task] = {}
+# New evidence that arrives while a thread is mid-run: coalesced into ONE follow-up run.
+_PENDING: dict[str, tuple[Any, str]] = {}
 
 
 def enabled() -> bool:
@@ -78,6 +80,9 @@ def _spawn(thread_id: str, inp: Any, org: str) -> asyncio.Task:
             pass
         finally:
             _RUNNING.pop(thread_id, None)
+            follow = _PENDING.pop(thread_id, None)
+            if follow is not None:
+                _spawn(thread_id, follow[0], follow[1])
     t = asyncio.create_task(run())
     _RUNNING[thread_id] = t
     return t
@@ -92,10 +97,14 @@ def _start(trigger: str, thread_id: str, org: str, **extra: Any) -> dict:
 
 def start_incident(incident_id: str, *, ctx: dict, org: str | None = None) -> asyncio.Task | None:
     """Called by agent.wake() after the Sentinel's risk detector opened the incident."""
-    if incident_id in _RUNNING:
-        return None
     org = org or current_org() or "NEXA"
-    return _spawn(incident_id, _start("risk", incident_id, org, ctx=ctx, plan={}, evidence={}), org)
+    inp = _start("risk", incident_id, org, ctx=ctx, plan={}, evidence={})
+    if incident_id in _RUNNING:
+        # The world moved while the team was working (e.g. a carrier scan that
+        # contradicts the supplier). Re-run once the current turn finishes.
+        _PENDING[incident_id] = (inp, org)
+        return None
+    return _spawn(incident_id, inp, org)
 
 
 async def goods_received(*, po_id: str, received: int, approved: int, incident_id: str | None,

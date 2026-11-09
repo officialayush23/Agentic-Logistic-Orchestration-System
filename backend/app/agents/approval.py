@@ -16,6 +16,21 @@ from .state import step
 async def approval(state: dict) -> dict:
     org, iid, st = enter(state)
     plan = state.get("plan") or {}
+    if not plan.get("label"):
+        # Escalation: nothing feasible. The human relaxes a constraint (budget,
+        # supplier, mode) outside the graph, then approves a replan, or closes it.
+        decision = interrupt({
+            "type": "no_feasible_plan", "incident_id": iid,
+            "action": "No recovery option passes every hard constraint",
+            "narrative": "Relax a constraint (budget, certification waiver, supplier) and approve to replan, or reject to close.",
+        }) or {}
+        d = decision.get("decision", "reject")
+        async with db_conn() as conn:
+            await emit(conn, incident_id=iid, actor="human", event_type="APPROVAL_DECIDED",
+                       human_summary=f"Operator chose to {'replan' if d == 'approve' else 'close'} the incident with no feasible plan",
+                       payload=decision)
+        return {"phase": "replan" if d == "approve" else "closed", "approval": decision,
+                "trail": [step("approval", "Human asked for a replan" if d == "approve" else "Human closed the escalation")]}
     # Everything above interrupt() re-runs on resume, so it must be read-only.
     decision = interrupt({
         "type": "plan_approval", "incident_id": iid, "action": plan.get("label"),

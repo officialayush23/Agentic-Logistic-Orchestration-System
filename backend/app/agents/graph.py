@@ -59,6 +59,8 @@ def route(state: IncidentState) -> tuple[str, str]:
         return "liaison", "holds secured; now talk to suppliers"
     if ph == "communicated":
         return ("sourcing", "suppliers contacted; plan the recovery") if t == "risk" else (END, "messages sent")
+    if ph == "no_plan":
+        return "approval", "no option passes every hard constraint: a human must decide"
     if ph == "planned":
         if plan.get("requires_approval"):
             return "approval", "plan exceeds the agent's authority or affects another customer"
