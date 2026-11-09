@@ -57,8 +57,33 @@ async def _suppliers(conn):
              "reliability": int(round(float(r["reliability_score"]) * 100)),
              "claimsChecked": int(r["checked"] or 0), "claimsContradicted": int(r["lied"] or 0),
              "paypalAccount": r.get("paypal_email_verified") or r.get("paypal_email") or "",
-             "certified": list(r["certifications"] or []), "leadDays": int(r["lead"] or 7)}
+             "certified": list(r["certifications"] or []), "leadDays": int(r["lead"] or 7),
+             "healthScore": r.get("health_score"), "signals": _signals(r.get("health_signals")),
+             **(await _memory(r["id"]))}
             for r in map(dict, rows)]
+
+
+def _signals(v) -> list[str]:
+    if isinstance(v, str):
+        import json as _j
+        try:
+            v = _j.loads(v)
+        except Exception:  # noqa: BLE001
+            return []
+    return [x.get("note", "") for x in (v or []) if isinstance(x, dict)]
+
+
+async def _memory(supplier_id: str) -> dict:
+    """What the agent team remembers about this supplier (LangGraph long-term store)."""
+    try:
+        from .agents import memory
+        from .core import current_org
+        prof = await memory.supplier_profile(current_org() or "NEXA", supplier_id)
+    except Exception:  # noqa: BLE001
+        return {}
+    if not prof:
+        return {}
+    return {"trust": prof.get("trust"), "memoryCounts": prof.get("counts") or {}}
 
 
 async def _projects(conn):

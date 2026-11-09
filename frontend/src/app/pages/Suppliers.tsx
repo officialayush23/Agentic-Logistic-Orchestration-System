@@ -7,6 +7,7 @@ import { glassGridTheme } from '../ag/setup'
 import { ConfidenceCell, MoneyCell, TagCell } from '../ag/renderers'
 import { data } from '../data/source'
 import type { Supplier } from '../data/types'
+import { StatusBadge } from '../ui/badges'
 import { CardHeader, GlassCard, SectionTitle } from '../ui/glass'
 import { KpiRow } from '../ui/Kpi'
 import { axis, GlassTooltip } from '../viz/chartKit'
@@ -27,6 +28,11 @@ export default function Suppliers() {
     { field: 'name', headerName: 'Supplier', flex: 1, minWidth: 200, cellClass: 'font-semibold' },
     { field: 'location', minWidth: 160, flex: 0.8 },
     { field: 'reliability', headerName: 'Learned reliability', width: 190, cellRenderer: ConfidenceCell, sort: 'asc' },
+    { field: 'trust', headerName: 'Agent memory', width: 140, headerTooltip: 'Trust level the agent team learned (LangGraph long-term memory)',
+      cellRenderer: (p: { value?: string }) => p.value
+        ? <span className="flex h-full items-center"><StatusBadge tone={p.value === 'proof_only' ? 'crit' : p.value === 'watch' ? 'warn' : 'good'} dot>{p.value === 'proof_only' ? 'proof only' : p.value}</StatusBadge></span> : null },
+    { field: 'healthScore', headerName: 'Health', width: 100, type: 'rightAligned', cellClass: (p) => ((p.value ?? 100) < 50 ? 'text-crit font-semibold' : '') },
+    { field: 'signals', headerName: 'Risk signals', width: 260, valueFormatter: (p) => (p.value?.length ? p.value.join(' · ') : '—'), tooltipValueGetter: (p) => p.value?.join('\n') },
     { field: 'claimsChecked', headerName: 'Claims checked', width: 130, type: 'rightAligned' },
     { field: 'claimsContradicted', headerName: 'Contradicted', width: 120, type: 'rightAligned', cellClass: (p) => (p.value ? 'text-crit font-semibold' : '') },
     { field: 'lieRate', headerName: 'Lie rate', width: 95, type: 'rightAligned', valueFormatter: (p) => `${p.value}%` },

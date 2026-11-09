@@ -83,6 +83,9 @@ function overlay(s: Snapshot) {
     const t = m.suppliers.find((x) => x.id === sp.id)
     if (!t) continue
     if (sp.paypalAccount) t.paypalAccount = sp.paypalAccount
+    if (sp.healthScore != null) t.healthScore = sp.healthScore
+    if (sp.signals?.length) t.signals = sp.signals
+    if (sp.trust) { t.trust = sp.trust; t.memoryCounts = sp.memoryCounts }
     if ((sp.claimsChecked ?? 0) > 0) { t.claimsChecked = sp.claimsChecked!; t.claimsContradicted = sp.claimsContradicted ?? t.claimsContradicted }
   }
   for (const po of s.purchaseOrders ?? []) {

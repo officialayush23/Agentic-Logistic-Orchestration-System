@@ -319,3 +319,16 @@ export const moneySeries = Array.from({ length: 14 }, (_, i) => {
   const recovered = [0, 0, 0, 0, 0, 0, 0, 0, 1.24, 1.24, 1.24, 1.24, 7.12, 15.49][i] * 1000
   return { day: d.toISOString().slice(5, 10), held, released, recovered }
 })
+
+// Seeded supplier health and what the agent team has learned (overlaid by live data).
+const HEALTH: Record<string, [number, string[], ('trusted' | 'watch' | 'proof_only')?]> = {
+  'SUP-21': [41, ['Carrier contradicted dispatch claims twice'], 'proof_only'],
+  'SUP-42': [71, ['Shares a plating house with Sahyadri Harness Works'], 'watch'],
+  'SUP-77': [78, ['Shares a plating house with Western connectors'], 'trusted'],
+}
+for (const s of suppliers) {
+  const h = HEALTH[s.id]
+  s.healthScore = h?.[0] ?? Math.min(96, s.reliability + 2)
+  s.signals = h?.[1] ?? []
+  s.trust = h?.[2] ?? (s.reliability >= 85 ? 'trusted' : s.reliability >= 60 ? 'watch' : 'proof_only')
+}

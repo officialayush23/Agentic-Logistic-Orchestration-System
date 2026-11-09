@@ -83,7 +83,7 @@ export default function BuyerShield() {
   const cols = useMemo<ColDef<GuardEvent>[]>(() => [
     { field: 'created_at', headerName: 'When', width: 150, valueFormatter: (p) => (p.value ? new Date(p.value).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '') },
     { field: 'guard', headerName: 'Guard', width: 150, rowGroup: false, enableRowGroup: true },
-    { field: 'outcome', headerName: 'Outcome', width: 110, cellRenderer: (p: { value: string }) => <StatusBadge tone={p.value === 'block' ? 'crit' : p.value === 'pass' ? 'good' : 'warn'}>{p.value}</StatusBadge> },
+    { field: 'outcome', headerName: 'Outcome', width: 110, cellRenderer: (p: { value: string }) => <span className="flex h-full items-center"><StatusBadge tone={p.value === 'block' ? 'crit' : p.value === 'pass' ? 'good' : 'warn'}>{p.value}</StatusBadge></span> },
     { field: 'po_id', headerName: 'PO', width: 110 },
     { field: 'amount_usd', headerName: 'Protected', width: 120, valueFormatter: (p) => (p.value ? usd(Number(p.value)) : '—') },
     { field: 'agent', headerName: 'Agent', width: 110 },

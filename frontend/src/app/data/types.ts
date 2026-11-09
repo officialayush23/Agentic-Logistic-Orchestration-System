@@ -80,6 +80,12 @@ export interface Supplier {
   certified: string[]
   leadDays: number
   soleSource?: boolean
+  /** Seeded risk signals (insolvency, fire, sub-tier) → 0–100 */
+  healthScore?: number | null
+  signals?: string[]
+  /** Learned by the agent team (LangGraph long-term memory) */
+  trust?: 'trusted' | 'watch' | 'proof_only'
+  memoryCounts?: Record<string, number>
 }
 
 export interface PurchaseOrder {
